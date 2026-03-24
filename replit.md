@@ -21,7 +21,8 @@ pnpm workspace monorepo using TypeScript. Each package manages its own dependenc
 ```text
 artifacts-monorepo/
 ├── artifacts/              # Deployable applications
-│   └── api-server/         # Express API server
+│   ├── api-server/         # Express API server with payroll engine
+│   └── payroll-app/        # React + Vite frontend for payroll calculator
 ├── lib/                    # Shared libraries
 │   ├── api-spec/           # OpenAPI spec + Orval codegen config
 │   ├── api-client-react/   # Generated React Query hooks
@@ -57,10 +58,22 @@ Express 5 API server. Routes live in `src/routes/` and use `@workspace/api-zod` 
 - Entry: `src/index.ts` — reads `PORT`, starts Express
 - App setup: `src/app.ts` — mounts CORS, JSON/urlencoded parsing, routes at `/api`
 - Routes: `src/routes/index.ts` mounts sub-routers; `src/routes/health.ts` exposes `GET /health` (full path: `/api/health`)
-- Depends on: `@workspace/db`, `@workspace/api-zod`
+- **Payroll routes** (`src/routes/payroll.ts`): `POST /api/payroll/upload-master`, `POST /api/payroll/upload-reports`, `POST /api/payroll/process`, `GET /api/payroll/download`, `GET /api/payroll/status`, `POST /api/payroll/reset`
+- **Payroll engine** (`src/lib/payroll-engine.ts`): Business logic for salary calculation using ExcelJS. In-memory session state. Rules: SALARY_BASE=5000 RUB, SALARY_LIMIT=24500 RUB, 2026 production calendar norms, overtime at 2x rate, fired before 17th = 0 hours, vacation/sick = 0 hours (unless sick-end date specified).
+- Depends on: `@workspace/db`, `@workspace/api-zod`, `exceljs`, `multer`
 - `pnpm --filter @workspace/api-server run dev` — run the dev server
 - `pnpm --filter @workspace/api-server run build` — production esbuild bundle (`dist/index.cjs`)
 - Build bundles an allowlist of deps (express, cors, pg, drizzle-orm, zod, etc.) and externalizes the rest
+
+### `artifacts/payroll-app` (`@workspace/payroll-app`)
+
+React + Vite frontend for the "ММ Расчёт Графика" payroll schedule calculator. All UI is in Russian. Dark professional theme with glass-morphism effects.
+
+- Entry: `src/main.tsx` → `src/App.tsx` → `src/pages/Home.tsx`
+- Key components: `StepIndicator` (3-step wizard), `Dropzone` (drag-drop file upload), `ResultsTable` (sortable salary results table)
+- Hooks: `src/hooks/use-payroll.ts` — wraps generated React Query hooks for payroll API, includes file download logic
+- Uses: `@workspace/api-client-react` for generated hooks, `react-dropzone`, `framer-motion`, `@tanstack/react-table`, `lucide-react`
+- `pnpm --filter @workspace/payroll-app run dev` — Vite dev server
 
 ### `lib/db` (`@workspace/db`)
 
@@ -94,3 +107,16 @@ Generated React Query hooks and fetch client from the OpenAPI spec (e.g. `useHea
 ### `scripts` (`@workspace/scripts`)
 
 Utility scripts package. Each script is a `.ts` file in `src/` with a corresponding npm script in `package.json`. Run scripts via `pnpm --filter @workspace/scripts run <script>`. Scripts can import any workspace package (e.g., `@workspace/db`) by adding it as a dependency in `scripts/package.json`.
+
+## Payroll Business Rules
+
+- Base salary: 5,000 RUB per month
+- Salary limit: 24,500 RUB (hours scaled down if exceeded)
+- Overtime: 2x rate for hours above monthly norm
+- 2026 production calendar norms: Jan=136h, Feb=151h, Mar=167h, etc.
+- Fired before 17th of month: 0 hours/salary
+- Fired on/after 17th: only hours up to dismissal date
+- Vacation (ОТПУСК): 0 hours
+- Sick (БОЛЬНИЧНЫЙ): 0 hours unless end date specified, then hours after sick-end
+- FIO matching: exact + fuzzy by surname prefix and initials
+- Master file format: Excel with day numbers in row 3, employees starting from row 5+, 2-column-per-day layout (hours go in second column of each day pair)

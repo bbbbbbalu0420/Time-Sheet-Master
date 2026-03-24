@@ -1,0 +1,16 @@
+packages:
+  "framer-motion": "For premium smooth animations and transitions between steps"
+  "react-dropzone": "For elegant drag-and-drop file upload areas"
+  "@tanstack/react-table": "For a powerful, sortable data grid for payroll results"
+  "clsx": "Utility for constructing className strings conditionally"
+  "tailwind-merge": "Utility to merge tailwind classes without style conflicts"
+
+images:
+  - path: "artifacts/payroll-app/public/images/fintech-bg.png"
+    description: "Ultra premium dark abstract geometric background with deep navy blue, slate, and subtle emerald green glowing neon accents, frosted glassmorphism style, no text"
+    aspect_ratio: "16:9"
+
+notes:
+  - "The API endpoints use multipart/form-data for file uploads, handled correctly by the generated orval hooks."
+  - "Backend hooks are imported from @workspace/api-client-react as specified."
+  - "React Query's queryClient is used to invalidate the status endpoint after any mutation to keep the UI perfectly synced."

@@ -8,3 +8,83 @@
 export interface HealthStatus {
   status: string;
 }
+
+export interface SimpleResponse {
+  success: boolean;
+  message: string;
+}
+
+export type EmployeeInfoExistingHours = { [key: string]: number };
+
+export interface EmployeeInfo {
+  fio: string;
+  rawFio: string;
+  status: string;
+  dismissDate?: string | null;
+  existingHours?: EmployeeInfoExistingHours;
+  totalExistingHours: number;
+}
+
+export interface MasterUploadResponse {
+  success: boolean;
+  message: string;
+  employeeCount: number;
+  month: number;
+  monthName: string;
+  normHours: number;
+  hourCost: number;
+  employees: EmployeeInfo[];
+}
+
+export interface ReportsUploadResponse {
+  success: boolean;
+  message: string;
+  filesProcessed: number;
+  totalRecords: number;
+  reportNames: string[];
+  matchedEmployees: string[];
+  unmatchedEmployees: string[];
+}
+
+export type EmployeeResultDayHours = { [key: string]: number };
+
+export interface EmployeeResult {
+  fio: string;
+  status: string;
+  totalHours: number;
+  salary: number;
+  overtime: number;
+  dayHours?: EmployeeResultDayHours;
+}
+
+export interface ProcessResponse {
+  success: boolean;
+  message: string;
+  results: EmployeeResult[];
+}
+
+export interface PayrollStatus {
+  hasMaster: boolean;
+  month?: number | null;
+  monthName?: string | null;
+  normHours?: number | null;
+  hourCost?: number | null;
+  employeeCount: number;
+  uploadedReports: string[];
+  isProcessed: boolean;
+  employees: EmployeeInfo[];
+  results: EmployeeResult[];
+}
+
+export type UploadMasterBody = {
+  file: Blob;
+  /**
+   * @minimum 1
+   * @maximum 12
+   */
+  month: number;
+};
+
+export type UploadReportsBody = {
+  files: Blob[];
+};

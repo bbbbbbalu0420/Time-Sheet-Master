@@ -14,3 +14,115 @@ import * as zod from "zod";
 export const HealthCheckResponse = zod.object({
   status: zod.string(),
 });
+
+/**
+ * Upload the master Excel file (MM РАСЧЕТ ГРАФИКА)
+ * @summary Upload master file
+ */
+export const uploadMasterBodyMonthMax = 12;
+
+export const UploadMasterBody = zod.object({
+  file: zod.instanceof(File),
+  month: zod.number().min(1).max(uploadMasterBodyMonthMax),
+});
+
+export const UploadMasterResponse = zod.object({
+  success: zod.boolean(),
+  message: zod.string(),
+  employeeCount: zod.number(),
+  month: zod.number(),
+  monthName: zod.string(),
+  normHours: zod.number(),
+  hourCost: zod.number(),
+  employees: zod.array(
+    zod.object({
+      fio: zod.string(),
+      rawFio: zod.string(),
+      status: zod.string(),
+      dismissDate: zod.string().nullish(),
+      existingHours: zod.record(zod.string(), zod.number()).optional(),
+      totalExistingHours: zod.number(),
+    }),
+  ),
+});
+
+/**
+ * Upload one or more RESULT_PAYROLL report Excel files
+ * @summary Upload payroll report files
+ */
+export const UploadReportsBody = zod.object({
+  files: zod.array(zod.instanceof(File)),
+});
+
+export const UploadReportsResponse = zod.object({
+  success: zod.boolean(),
+  message: zod.string(),
+  filesProcessed: zod.number(),
+  totalRecords: zod.number(),
+  reportNames: zod.array(zod.string()),
+  matchedEmployees: zod.array(zod.string()),
+  unmatchedEmployees: zod.array(zod.string()),
+});
+
+/**
+ * Apply business rules and calculate salaries
+ * @summary Process payroll data
+ */
+export const ProcessPayrollResponse = zod.object({
+  success: zod.boolean(),
+  message: zod.string(),
+  results: zod.array(
+    zod.object({
+      fio: zod.string(),
+      status: zod.string(),
+      totalHours: zod.number(),
+      salary: zod.number(),
+      overtime: zod.number(),
+      dayHours: zod.record(zod.string(), zod.number()).optional(),
+    }),
+  ),
+});
+
+/**
+ * Get current payroll session state with employees and their data
+ * @summary Get current session status
+ */
+export const GetPayrollStatusResponse = zod.object({
+  hasMaster: zod.boolean(),
+  month: zod.number().nullish(),
+  monthName: zod.string().nullish(),
+  normHours: zod.number().nullish(),
+  hourCost: zod.number().nullish(),
+  employeeCount: zod.number(),
+  uploadedReports: zod.array(zod.string()),
+  isProcessed: zod.boolean(),
+  employees: zod.array(
+    zod.object({
+      fio: zod.string(),
+      rawFio: zod.string(),
+      status: zod.string(),
+      dismissDate: zod.string().nullish(),
+      existingHours: zod.record(zod.string(), zod.number()).optional(),
+      totalExistingHours: zod.number(),
+    }),
+  ),
+  results: zod.array(
+    zod.object({
+      fio: zod.string(),
+      status: zod.string(),
+      totalHours: zod.number(),
+      salary: zod.number(),
+      overtime: zod.number(),
+      dayHours: zod.record(zod.string(), zod.number()).optional(),
+    }),
+  ),
+});
+
+/**
+ * Clear all uploaded data and start fresh
+ * @summary Reset session
+ */
+export const ResetSessionResponse = zod.object({
+  success: zod.boolean(),
+  message: zod.string(),
+});

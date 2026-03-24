@@ -6,4 +6,15 @@
  * OpenAPI spec version: 0.1.0
  */
 
+export * from "./employeeInfo";
+export * from "./employeeInfoExistingHours";
+export * from "./employeeResult";
+export * from "./employeeResultDayHours";
 export * from "./healthStatus";
+export * from "./masterUploadResponse";
+export * from "./payrollStatus";
+export * from "./processResponse";
+export * from "./reportsUploadResponse";
+export * from "./simpleResponse";
+export * from "./uploadMasterBody";
+export * from "./uploadReportsBody";

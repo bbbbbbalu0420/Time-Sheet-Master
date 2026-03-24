@@ -5,18 +5,30 @@
  * API specification
  * OpenAPI spec version: 0.1.0
  */
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery } from "@tanstack/react-query";
 import type {
+  MutationFunction,
   QueryFunction,
   QueryKey,
+  UseMutationOptions,
+  UseMutationResult,
   UseQueryOptions,
   UseQueryResult,
 } from "@tanstack/react-query";
 
-import type { HealthStatus } from "./api.schemas";
+import type {
+  HealthStatus,
+  MasterUploadResponse,
+  PayrollStatus,
+  ProcessResponse,
+  ReportsUploadResponse,
+  SimpleResponse,
+  UploadMasterBody,
+  UploadReportsBody,
+} from "./api.schemas";
 
 import { customFetch } from "../custom-fetch";
-import type { ErrorType } from "../custom-fetch";
+import type { ErrorType, BodyType } from "../custom-fetch";
 
 type AwaitedInput<T> = PromiseLike<T> | T;
 
@@ -99,3 +111,496 @@ export function useHealthCheck<
 
   return { ...query, queryKey: queryOptions.queryKey };
 }
+
+/**
+ * Upload the master Excel file (MM РАСЧЕТ ГРАФИКА)
+ * @summary Upload master file
+ */
+export const getUploadMasterUrl = () => {
+  return `/api/payroll/upload-master`;
+};
+
+export const uploadMaster = async (
+  uploadMasterBody: UploadMasterBody,
+  options?: RequestInit,
+): Promise<MasterUploadResponse> => {
+  const formData = new FormData();
+  formData.append(`file`, uploadMasterBody.file);
+  formData.append(`month`, uploadMasterBody.month.toString());
+
+  return customFetch<MasterUploadResponse>(getUploadMasterUrl(), {
+    ...options,
+    method: "POST",
+    body: formData,
+  });
+};
+
+export const getUploadMasterMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof uploadMaster>>,
+    TError,
+    { data: BodyType<UploadMasterBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof uploadMaster>>,
+  TError,
+  { data: BodyType<UploadMasterBody> },
+  TContext
+> => {
+  const mutationKey = ["uploadMaster"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof uploadMaster>>,
+    { data: BodyType<UploadMasterBody> }
+  > = (props) => {
+    const { data } = props ?? {};
+
+    return uploadMaster(data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type UploadMasterMutationResult = NonNullable<
+  Awaited<ReturnType<typeof uploadMaster>>
+>;
+export type UploadMasterMutationBody = BodyType<UploadMasterBody>;
+export type UploadMasterMutationError = ErrorType<unknown>;
+
+/**
+ * @summary Upload master file
+ */
+export const useUploadMaster = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof uploadMaster>>,
+    TError,
+    { data: BodyType<UploadMasterBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof uploadMaster>>,
+  TError,
+  { data: BodyType<UploadMasterBody> },
+  TContext
+> => {
+  return useMutation(getUploadMasterMutationOptions(options));
+};
+
+/**
+ * Upload one or more RESULT_PAYROLL report Excel files
+ * @summary Upload payroll report files
+ */
+export const getUploadReportsUrl = () => {
+  return `/api/payroll/upload-reports`;
+};
+
+export const uploadReports = async (
+  uploadReportsBody: UploadReportsBody,
+  options?: RequestInit,
+): Promise<ReportsUploadResponse> => {
+  const formData = new FormData();
+  uploadReportsBody.files.forEach((value) => formData.append(`files`, value));
+
+  return customFetch<ReportsUploadResponse>(getUploadReportsUrl(), {
+    ...options,
+    method: "POST",
+    body: formData,
+  });
+};
+
+export const getUploadReportsMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof uploadReports>>,
+    TError,
+    { data: BodyType<UploadReportsBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof uploadReports>>,
+  TError,
+  { data: BodyType<UploadReportsBody> },
+  TContext
+> => {
+  const mutationKey = ["uploadReports"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof uploadReports>>,
+    { data: BodyType<UploadReportsBody> }
+  > = (props) => {
+    const { data } = props ?? {};
+
+    return uploadReports(data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type UploadReportsMutationResult = NonNullable<
+  Awaited<ReturnType<typeof uploadReports>>
+>;
+export type UploadReportsMutationBody = BodyType<UploadReportsBody>;
+export type UploadReportsMutationError = ErrorType<unknown>;
+
+/**
+ * @summary Upload payroll report files
+ */
+export const useUploadReports = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof uploadReports>>,
+    TError,
+    { data: BodyType<UploadReportsBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof uploadReports>>,
+  TError,
+  { data: BodyType<UploadReportsBody> },
+  TContext
+> => {
+  return useMutation(getUploadReportsMutationOptions(options));
+};
+
+/**
+ * Apply business rules and calculate salaries
+ * @summary Process payroll data
+ */
+export const getProcessPayrollUrl = () => {
+  return `/api/payroll/process`;
+};
+
+export const processPayroll = async (
+  options?: RequestInit,
+): Promise<ProcessResponse> => {
+  return customFetch<ProcessResponse>(getProcessPayrollUrl(), {
+    ...options,
+    method: "POST",
+  });
+};
+
+export const getProcessPayrollMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof processPayroll>>,
+    TError,
+    void,
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof processPayroll>>,
+  TError,
+  void,
+  TContext
+> => {
+  const mutationKey = ["processPayroll"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof processPayroll>>,
+    void
+  > = () => {
+    return processPayroll(requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type ProcessPayrollMutationResult = NonNullable<
+  Awaited<ReturnType<typeof processPayroll>>
+>;
+
+export type ProcessPayrollMutationError = ErrorType<unknown>;
+
+/**
+ * @summary Process payroll data
+ */
+export const useProcessPayroll = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof processPayroll>>,
+    TError,
+    void,
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof processPayroll>>,
+  TError,
+  void,
+  TContext
+> => {
+  return useMutation(getProcessPayrollMutationOptions(options));
+};
+
+/**
+ * Download the processed FINAL_MASTER_PAYROLL.xlsx
+ * @summary Download result file
+ */
+export const getDownloadResultUrl = () => {
+  return `/api/payroll/download`;
+};
+
+export const downloadResult = async (options?: RequestInit): Promise<Blob> => {
+  return customFetch<Blob>(getDownloadResultUrl(), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getDownloadResultQueryKey = () => {
+  return [`/api/payroll/download`] as const;
+};
+
+export const getDownloadResultQueryOptions = <
+  TData = Awaited<ReturnType<typeof downloadResult>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof downloadResult>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getDownloadResultQueryKey();
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof downloadResult>>> = ({
+    signal,
+  }) => downloadResult({ signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof downloadResult>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type DownloadResultQueryResult = NonNullable<
+  Awaited<ReturnType<typeof downloadResult>>
+>;
+export type DownloadResultQueryError = ErrorType<unknown>;
+
+/**
+ * @summary Download result file
+ */
+
+export function useDownloadResult<
+  TData = Awaited<ReturnType<typeof downloadResult>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof downloadResult>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getDownloadResultQueryOptions(options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * Get current payroll session state with employees and their data
+ * @summary Get current session status
+ */
+export const getGetPayrollStatusUrl = () => {
+  return `/api/payroll/status`;
+};
+
+export const getPayrollStatus = async (
+  options?: RequestInit,
+): Promise<PayrollStatus> => {
+  return customFetch<PayrollStatus>(getGetPayrollStatusUrl(), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getGetPayrollStatusQueryKey = () => {
+  return [`/api/payroll/status`] as const;
+};
+
+export const getGetPayrollStatusQueryOptions = <
+  TData = Awaited<ReturnType<typeof getPayrollStatus>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof getPayrollStatus>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getGetPayrollStatusQueryKey();
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof getPayrollStatus>>
+  > = ({ signal }) => getPayrollStatus({ signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof getPayrollStatus>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type GetPayrollStatusQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getPayrollStatus>>
+>;
+export type GetPayrollStatusQueryError = ErrorType<unknown>;
+
+/**
+ * @summary Get current session status
+ */
+
+export function useGetPayrollStatus<
+  TData = Awaited<ReturnType<typeof getPayrollStatus>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof getPayrollStatus>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getGetPayrollStatusQueryOptions(options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * Clear all uploaded data and start fresh
+ * @summary Reset session
+ */
+export const getResetSessionUrl = () => {
+  return `/api/payroll/reset`;
+};
+
+export const resetSession = async (
+  options?: RequestInit,
+): Promise<SimpleResponse> => {
+  return customFetch<SimpleResponse>(getResetSessionUrl(), {
+    ...options,
+    method: "POST",
+  });
+};
+
+export const getResetSessionMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof resetSession>>,
+    TError,
+    void,
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof resetSession>>,
+  TError,
+  void,
+  TContext
+> => {
+  const mutationKey = ["resetSession"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof resetSession>>,
+    void
+  > = () => {
+    return resetSession(requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type ResetSessionMutationResult = NonNullable<
+  Awaited<ReturnType<typeof resetSession>>
+>;
+
+export type ResetSessionMutationError = ErrorType<unknown>;
+
+/**
+ * @summary Reset session
+ */
+export const useResetSession = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof resetSession>>,
+    TError,
+    void,
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof resetSession>>,
+  TError,
+  void,
+  TContext
+> => {
+  return useMutation(getResetSessionMutationOptions(options));
+};

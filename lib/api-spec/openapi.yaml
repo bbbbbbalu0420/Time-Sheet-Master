@@ -10,6 +10,8 @@ servers:
 tags:
   - name: health
     description: Health operations
+  - name: payroll
+    description: Payroll processing operations
 paths:
   /healthz:
     get:
@@ -24,6 +26,113 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/HealthStatus"
+  /payroll/upload-master:
+    post:
+      operationId: uploadMaster
+      tags: [payroll]
+      summary: Upload master file
+      description: Upload the master Excel file (MM РАСЧЕТ ГРАФИКА)
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              properties:
+                file:
+                  type: string
+                  format: binary
+                month:
+                  type: integer
+                  minimum: 1
+                  maximum: 12
+              required: [file, month]
+      responses:
+        "200":
+          description: Master file uploaded and parsed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MasterUploadResponse"
+  /payroll/upload-reports:
+    post:
+      operationId: uploadReports
+      tags: [payroll]
+      summary: Upload payroll report files
+      description: Upload one or more RESULT_PAYROLL report Excel files
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              properties:
+                files:
+                  type: array
+                  items:
+                    type: string
+                    format: binary
+              required: [files]
+      responses:
+        "200":
+          description: Reports uploaded and processed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ReportsUploadResponse"
+  /payroll/process:
+    post:
+      operationId: processPayroll
+      tags: [payroll]
+      summary: Process payroll data
+      description: Apply business rules and calculate salaries
+      responses:
+        "200":
+          description: Processing complete
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProcessResponse"
+  /payroll/download:
+    get:
+      operationId: downloadResult
+      tags: [payroll]
+      summary: Download result file
+      description: Download the processed FINAL_MASTER_PAYROLL.xlsx
+      responses:
+        "200":
+          description: Excel file
+          content:
+            application/vnd.openxmlformats-officedocument.spreadsheetml.sheet:
+              schema:
+                type: string
+                format: binary
+  /payroll/status:
+    get:
+      operationId: getPayrollStatus
+      tags: [payroll]
+      summary: Get current session status
+      description: Get current payroll session state with employees and their data
+      responses:
+        "200":
+          description: Current session status
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PayrollStatus"
+  /payroll/reset:
+    post:
+      operationId: resetSession
+      tags: [payroll]
+      summary: Reset session
+      description: Clear all uploaded data and start fresh
+      responses:
+        "200":
+          description: Session reset
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SimpleResponse"
 components:
   schemas:
     HealthStatus:
@@ -33,4 +142,140 @@ components:
           type: string
       required:
         - status
-
+    SimpleResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+        message:
+          type: string
+      required: [success, message]
+    MasterUploadResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+        message:
+          type: string
+        employeeCount:
+          type: integer
+        month:
+          type: integer
+        monthName:
+          type: string
+        normHours:
+          type: integer
+        hourCost:
+          type: number
+        employees:
+          type: array
+          items:
+            $ref: "#/components/schemas/EmployeeInfo"
+      required: [success, message, employeeCount, month, monthName, normHours, hourCost, employees]
+    EmployeeInfo:
+      type: object
+      properties:
+        fio:
+          type: string
+        rawFio:
+          type: string
+        status:
+          type: string
+        dismissDate:
+          type: string
+          nullable: true
+        existingHours:
+          type: object
+          additionalProperties:
+            type: number
+        totalExistingHours:
+          type: number
+      required: [fio, rawFio, status, totalExistingHours]
+    ReportsUploadResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+        message:
+          type: string
+        filesProcessed:
+          type: integer
+        totalRecords:
+          type: integer
+        reportNames:
+          type: array
+          items:
+            type: string
+        matchedEmployees:
+          type: array
+          items:
+            type: string
+        unmatchedEmployees:
+          type: array
+          items:
+            type: string
+      required: [success, message, filesProcessed, totalRecords, reportNames, matchedEmployees, unmatchedEmployees]
+    ProcessResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+        message:
+          type: string
+        results:
+          type: array
+          items:
+            $ref: "#/components/schemas/EmployeeResult"
+      required: [success, message, results]
+    EmployeeResult:
+      type: object
+      properties:
+        fio:
+          type: string
+        status:
+          type: string
+        totalHours:
+          type: number
+        salary:
+          type: number
+        overtime:
+          type: number
+        dayHours:
+          type: object
+          additionalProperties:
+            type: number
+      required: [fio, status, totalHours, salary, overtime]
+    PayrollStatus:
+      type: object
+      properties:
+        hasMaster:
+          type: boolean
+        month:
+          type: integer
+          nullable: true
+        monthName:
+          type: string
+          nullable: true
+        normHours:
+          type: integer
+          nullable: true
+        hourCost:
+          type: number
+          nullable: true
+        employeeCount:
+          type: integer
+        uploadedReports:
+          type: array
+          items:
+            type: string
+        isProcessed:
+          type: boolean
+        employees:
+          type: array
+          items:
+            $ref: "#/components/schemas/EmployeeInfo"
+        results:
+          type: array
+          items:
+            $ref: "#/components/schemas/EmployeeResult"
+      required: [hasMaster, employeeCount, uploadedReports, isProcessed, employees, results]
