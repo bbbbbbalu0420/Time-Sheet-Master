@@ -651,9 +651,15 @@ export async function generateResultFile(): Promise<Buffer> {
       const pair = currentSession.dayColPairs[day];
       if (!pair) continue;
 
-      const writeCol = pair.col2;
-      const cell = ws.getRow(emp.row).getCell(writeCol);
-      cell.value = Math.round(hours * 10) / 10;
+      const row = ws.getRow(emp.row);
+      const col1Val = row.getCell(pair.col1).value;
+      const col1Num = (typeof col1Val === "number" && col1Val > 0) ? col1Val : 0;
+      const toWrite = Math.round((hours - col1Num) * 10) / 10;
+
+      if (toWrite <= 0) continue;
+
+      const cell = row.getCell(pair.col2);
+      cell.value = toWrite;
 
       const isNew = !result.existingHours[day];
       if (isNew) {
