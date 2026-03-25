@@ -127,6 +127,9 @@ export const uploadMaster = async (
   const formData = new FormData();
   formData.append(`file`, uploadMasterBody.file);
   formData.append(`month`, uploadMasterBody.month.toString());
+  if (uploadMasterBody.clearHours !== undefined) {
+    formData.append(`clearHours`, uploadMasterBody.clearHours);
+  }
 
   return customFetch<MasterUploadResponse>(getUploadMasterUrl(), {
     ...options,

@@ -46,6 +46,9 @@ paths:
                   type: integer
                   minimum: 1
                   maximum: 12
+                clearHours:
+                  type: string
+                  default: "true"
               required: [file, month]
       responses:
         "200":
@@ -165,6 +168,8 @@ components:
           type: string
         normHours:
           type: integer
+        clearHours:
+          type: boolean
         employees:
           type: array
           items:
@@ -182,8 +187,6 @@ components:
         dismissDate:
           type: string
           nullable: true
-        salary:
-          type: number
         existingHours:
           type: object
           additionalProperties:
@@ -240,6 +243,14 @@ components:
           type: number
         overtime:
           type: number
+        nightPay:
+          type: number
+        basePay:
+          type: number
+        overtimePay:
+          type: number
+        uncappedSalary:
+          type: number
         dayHours:
           type: object
           additionalProperties:
@@ -280,6 +291,8 @@ components:
           items:
             type: string
         isProcessed:
+          type: boolean
+        clearHours:
           type: boolean
         employees:
           type: array

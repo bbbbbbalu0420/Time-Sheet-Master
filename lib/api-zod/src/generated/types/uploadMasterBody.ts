@@ -13,4 +13,5 @@ export type UploadMasterBody = {
    * @maximum 12
    */
   month: number;
+  clearHours?: string;
 };

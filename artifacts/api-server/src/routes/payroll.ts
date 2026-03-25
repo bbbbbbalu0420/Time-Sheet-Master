@@ -27,7 +27,8 @@ router.post("/payroll/upload-master", upload.single("file"), async (req, res) =>
       return;
     }
 
-    const result = await uploadMaster(file.buffer, month, file.originalname);
+    const clearHours = req.body.clearHours !== "false";
+    const result = await uploadMaster(file.buffer, month, file.originalname, clearHours);
     res.json(result);
   } catch (err: any) {
     req.log.error({ err }, "Error uploading master file");
@@ -131,12 +132,12 @@ router.get("/payroll/status", async (req, res) => {
       employeeCount: session.employees.length,
       uploadedReports: session.uploadedReports,
       isProcessed: session.isProcessed,
+      clearHours: session.clearHours,
       employees: session.employees.map((e) => ({
         fio: e.fio,
         rawFio: e.rawFio,
         status: e.status,
         dismissDate: e.dismissDate,
-        salary: e.salary,
         existingHours: e.existingHours,
         totalExistingHours: e.totalExistingHours,
       })),

@@ -69,7 +69,7 @@ Express 5 API server. Routes live in `src/routes/` and use `@workspace/api-zod` 
 React + Vite frontend for the "ММ Расчёт Графика" payroll schedule calculator. All UI is in Russian. Dark professional theme with glass-morphism effects.
 
 - Entry: `src/main.tsx` → `src/App.tsx` → `src/pages/Home.tsx`
-- Key components: `StepIndicator` (3-step wizard), `Dropzone` (drag-drop file upload), `ResultsTable` (sortable salary results table with existing/new hours breakdown)
+- Key components: `StepIndicator` (3-step wizard), `Dropzone` (drag-drop file upload), `ResultsTable` (sortable salary results table with hours/overtime/night pay/salary breakdown)
 - Hooks: `src/hooks/use-payroll.ts` — wraps generated React Query hooks for payroll API, includes file download logic
 - Uses: `@workspace/api-client-react` for generated hooks, `react-dropzone`, `framer-motion`, `@tanstack/react-table`, `lucide-react`
 
@@ -92,20 +92,25 @@ Generated React Query hooks and fetch client from the OpenAPI spec.
 
 ## Payroll Business Rules
 
-- **Per-employee salary (оклад)**: Read from master file column 70 (e.g., 4500 or 5100 RUB). Default 4500 if not found.
-- **Salary limit**: 24,500 RUB max per employee (hours scaled proportionally if exceeded)
-- **Overtime**: 2x hourly rate for hours above monthly production calendar norm
-- **Hourly rate**: employee_salary / production_calendar_norm_hours
+- **Оклад (salary base)**: 5,000 RUB fixed for all employees
+- **Salary limit**: 24,500 RUB max per employee (salary capped, hours NOT scaled)
+- **Hourly rate**: 5000 / production_calendar_norm_hours
+- **Base pay**: min(totalHours, normHours) × hourlyRate
+- **Overtime pay**: overtimeHours × hourlyRate × 2
+- **Night pay (ночные)**: totalHours × hourlyRate (100% premium for all worked hours)
+- **Total salary**: basePay + overtimePay + nightPay, capped at 24,500
 - **2026 production calendar norms (40-hour week)**: Jan=120h, Feb=152h, Mar=168h, Apr=175h, May=151h, Jun=167h, Jul=184h, Aug=168h, Sep=176h, Oct=176h, Nov=159h, Dec=176h
-- **Hours merging**: Existing hours from master + report hours merged per day (take max if both exist)
+- **Clear hours option**: When uploading master file, optionally clear all existing hours (default: enabled). Only report hours are used.
+- **Hours per employee**: Target 350-375 hours/month, 22-hour shifts, work every other day
 - **Fired before 17th**: 0 hours/salary
 - **Fired on/after 17th**: only hours up to dismissal date counted
-- **ОТПУСК (vacation)**: 0 hours
-- **БОЛЬНИЧНЫЙ (sick)**: 0 hours unless end date specified, then hours after sick-end
+- **ОТПУСК (vacation)**: 0 hours, yellow fill in output
+- **БОЛЬНИЧНЫЙ (sick)**: 0 hours (unless end date specified, then hours after sick-end), yellow fill in output
 - **ЗА СВОЙ СЧЁТ (unpaid leave)**: 0 hours/salary
+- **УВОЛЕН (fired)**: red fill in output
 - **Employee filtering**: Skip rows containing "бухгалтер", "руководитель", "главн"
 - **Employee section detection**: Stop parsing after 3 consecutive empty rows in column B
 - **FIO matching**: Exact normalized match + fuzzy by surname prefix and initials (dots removed)
-- **Master file format**: Excel with day numbers in row 3, 2 columns per day (col1=request #1, col2=request #2), employees start from headerRow+2, salary in col 70
-- **Output file**: New hours written to col2 of day pair, green fill (FF90EE90) for genuinely new hours, red fill for fired employees
+- **Master file format**: Excel with day numbers in row 3, 2 columns per day (col1=existing, col2=new), employees start from headerRow+2
+- **Output file**: Hours written to col2 of day pair, green fill (FF90EE90) for work hours, yellow (FFFFFF00) for vacation/sick, red (FFFF6B6B) for fired
 - **Report file format**: Headers row 1 (Дата открытия, Кассир, НАЧИСЛЕНО/ОКРУГЛЕНИЕ), data rows 2+. Date can be Date object, string (DD.MM.YYYY), or Excel serial. Hours can be number or "HH:MM" string.

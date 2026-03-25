@@ -16,8 +16,10 @@ interface EmployeeResult {
   salary: number;
   overtime: number;
   dayHours: Record<string, number>;
-  existingHours?: Record<string, number>;
-  newHours?: Record<string, number>;
+  nightPay?: number;
+  basePay?: number;
+  overtimePay?: number;
+  uncappedSalary?: number;
   employeeSalary?: number;
   normHours?: number;
   hourCost?: number;
@@ -31,8 +33,8 @@ const columnHelper = createColumnHelper<EmployeeResult>();
 
 const getStatusColor = (status: string) => {
   if (status === 'РАБОТАЕТ') return 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20';
-  if (status === 'ОТПУСК') return 'bg-blue-500/10 text-blue-400 border-blue-500/20';
-  if (status === 'БОЛЬНИЧНЫЙ') return 'bg-amber-500/10 text-amber-400 border-amber-500/20';
+  if (status === 'ОТПУСК') return 'bg-yellow-500/10 text-yellow-400 border-yellow-500/20';
+  if (status === 'БОЛЬНИЧНЫЙ') return 'bg-yellow-500/10 text-yellow-400 border-yellow-500/20';
   if (status.includes('УВОЛЕН')) return 'bg-rose-500/10 text-rose-400 border-rose-500/20';
   if (status.includes('СВОЙ СЧ')) return 'bg-violet-500/10 text-violet-400 border-violet-500/20';
   return 'bg-white/5 text-muted-foreground border-white/10';
@@ -73,31 +75,32 @@ export function ResultsTable({ results }: ResultsTableProps) {
         return <div className="text-right text-amber-400 font-mono text-sm font-bold">+{val.toFixed(1)}</div>;
       },
     }),
+    columnHelper.display({
+      id: "nightPay",
+      header: "Ночные",
+      cell: (info) => {
+        const val = info.row.original.nightPay;
+        if (!val || val <= 0) return <div className="text-right text-muted-foreground font-mono text-xs">—</div>;
+        return <div className="text-right font-mono text-xs text-blue-400">{formatCurrency(val)}</div>;
+      },
+    }),
     columnHelper.accessor("salary", {
       header: "К выплате",
       cell: (info) => {
         const val = info.getValue();
-        const isLimit = val >= 24500;
+        const uncapped = info.row.original.uncappedSalary || 0;
+        const isCapped = val >= 24500 && uncapped > val;
         return (
           <div className="flex items-center justify-end gap-1.5">
-            {isLimit && <AlertCircle className="w-3.5 h-3.5 text-rose-400 flex-shrink-0" />}
+            {isCapped && <AlertCircle className="w-3.5 h-3.5 text-rose-400 flex-shrink-0" />}
             <span className={cn(
               "font-mono font-bold text-base whitespace-nowrap",
-              isLimit ? "text-rose-400" : val > 0 ? "text-emerald-400" : "text-muted-foreground"
+              isCapped ? "text-rose-400" : val > 0 ? "text-emerald-400" : "text-muted-foreground"
             )}>
               {formatCurrency(val)}
             </span>
           </div>
         );
-      },
-    }),
-    columnHelper.display({
-      id: "empSalary",
-      header: "Оклад",
-      cell: (info) => {
-        const val = info.row.original.employeeSalary;
-        if (!val) return <div className="text-right text-muted-foreground font-mono text-xs">—</div>;
-        return <div className="text-right font-mono text-xs text-muted-foreground">{val.toLocaleString('ru-RU')} ₽</div>;
       },
     }),
   ];
@@ -114,11 +117,12 @@ export function ResultsTable({ results }: ResultsTableProps) {
   const totalSalary = results.reduce((s, r) => s + r.salary, 0);
   const totalHours = results.reduce((s, r) => s + r.totalHours, 0);
   const totalOvertime = results.reduce((s, r) => s + r.overtime, 0);
+  const totalNight = results.reduce((s, r) => s + (r.nightPay || 0), 0);
 
   return (
     <div className="w-full overflow-hidden rounded-2xl border border-white/10 bg-card/40 backdrop-blur-md shadow-2xl">
       <div className="overflow-x-auto">
-        <table className="w-full text-left border-collapse min-w-[600px]">
+        <table className="w-full text-left border-collapse min-w-[650px]">
           <thead>
             {table.getHeaderGroups().map((headerGroup) => (
               <tr key={headerGroup.id} className="border-b border-white/10 bg-white/5">
@@ -156,8 +160,8 @@ export function ResultsTable({ results }: ResultsTableProps) {
               <td className="px-3 py-3 text-sm font-bold text-foreground" colSpan={2}>ИТОГО</td>
               <td className="px-3 py-3 text-right font-mono text-sm font-bold">{totalHours.toFixed(1)}</td>
               <td className="px-3 py-3 text-right font-mono text-sm font-bold text-amber-400">{totalOvertime > 0 ? `+${totalOvertime.toFixed(1)}` : '—'}</td>
+              <td className="px-3 py-3 text-right font-mono text-xs font-bold text-blue-400">{totalNight > 0 ? formatCurrency(totalNight) : '—'}</td>
               <td className="px-3 py-3 text-right font-mono text-base font-bold text-emerald-400">{formatCurrency(totalSalary)}</td>
-              <td className="px-3 py-3"></td>
             </tr>
           </tfoot>
         </table>

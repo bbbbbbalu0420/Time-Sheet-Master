@@ -16,6 +16,7 @@ export interface PayrollStatus {
   employeeCount: number;
   uploadedReports: string[];
   isProcessed: boolean;
+  clearHours?: boolean;
   employees: EmployeeInfo[];
   results: EmployeeResult[];
 }

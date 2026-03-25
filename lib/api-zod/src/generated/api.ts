@@ -21,9 +21,12 @@ export const HealthCheckResponse = zod.object({
  */
 export const uploadMasterBodyMonthMax = 12;
 
+export const uploadMasterBodyClearHoursDefault = `true`;
+
 export const UploadMasterBody = zod.object({
   file: zod.instanceof(File),
   month: zod.number().min(1).max(uploadMasterBodyMonthMax),
+  clearHours: zod.string().default(uploadMasterBodyClearHoursDefault),
 });
 
 export const UploadMasterResponse = zod.object({
@@ -33,13 +36,13 @@ export const UploadMasterResponse = zod.object({
   month: zod.number(),
   monthName: zod.string(),
   normHours: zod.number(),
+  clearHours: zod.boolean().optional(),
   employees: zod.array(
     zod.object({
       fio: zod.string(),
       rawFio: zod.string(),
       status: zod.string(),
       dismissDate: zod.string().nullish(),
-      salary: zod.number().optional(),
       existingHours: zod.record(zod.string(), zod.number()).optional(),
       totalExistingHours: zod.number(),
     }),
@@ -78,6 +81,10 @@ export const ProcessPayrollResponse = zod.object({
       totalHours: zod.number(),
       salary: zod.number(),
       overtime: zod.number(),
+      nightPay: zod.number().optional(),
+      basePay: zod.number().optional(),
+      overtimePay: zod.number().optional(),
+      uncappedSalary: zod.number().optional(),
       dayHours: zod.record(zod.string(), zod.number()).optional(),
       existingHours: zod.record(zod.string(), zod.number()).optional(),
       newHours: zod.record(zod.string(), zod.number()).optional(),
@@ -100,13 +107,13 @@ export const GetPayrollStatusResponse = zod.object({
   employeeCount: zod.number(),
   uploadedReports: zod.array(zod.string()),
   isProcessed: zod.boolean(),
+  clearHours: zod.boolean().optional(),
   employees: zod.array(
     zod.object({
       fio: zod.string(),
       rawFio: zod.string(),
       status: zod.string(),
       dismissDate: zod.string().nullish(),
-      salary: zod.number().optional(),
       existingHours: zod.record(zod.string(), zod.number()).optional(),
       totalExistingHours: zod.number(),
     }),
@@ -118,6 +125,10 @@ export const GetPayrollStatusResponse = zod.object({
       totalHours: zod.number(),
       salary: zod.number(),
       overtime: zod.number(),
+      nightPay: zod.number().optional(),
+      basePay: zod.number().optional(),
+      overtimePay: zod.number().optional(),
+      uncappedSalary: zod.number().optional(),
       dayHours: zod.record(zod.string(), zod.number()).optional(),
       existingHours: zod.record(zod.string(), zod.number()).optional(),
       newHours: zod.record(zod.string(), zod.number()).optional(),

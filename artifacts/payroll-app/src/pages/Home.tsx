@@ -28,9 +28,9 @@ export default function Home() {
   const { data: status, isLoading } = usePayrollState();
   const actions = usePayrollActions();
 
-  // Local state for forms
   const [masterFile, setMasterFile] = useState<File | null>(null);
   const [selectedMonth, setSelectedMonth] = useState<number>(new Date().getMonth() + 1);
+  const [clearHours, setClearHours] = useState<boolean>(true);
   const [reportFiles, setReportFiles] = useState<File[]>([]);
 
   if (isLoading) {
@@ -48,7 +48,7 @@ export default function Home() {
 
   const handleUploadMaster = () => {
     if (!masterFile) return;
-    actions.uploadMaster.mutate({ data: { file: masterFile, month: selectedMonth } });
+    actions.uploadMaster.mutate({ data: { file: masterFile, month: selectedMonth, clearHours: clearHours ? "true" : "false" } });
   };
 
   const handleUploadReports = () => {
@@ -144,6 +144,19 @@ export default function Home() {
                       ))}
                     </div>
                   </div>
+
+                  <label className="flex items-center gap-3 p-3 rounded-xl bg-white/5 border border-white/10 cursor-pointer hover:bg-white/10 transition-colors">
+                    <input
+                      type="checkbox"
+                      checked={clearHours}
+                      onChange={(e) => setClearHours(e.target.checked)}
+                      className="w-5 h-5 rounded border-white/20 bg-white/10 accent-primary"
+                    />
+                    <div>
+                      <span className="text-sm font-semibold text-white/90">Очистить существующие часы</span>
+                      <p className="text-xs text-muted-foreground">Обнулить все часы в шаблоне и заполнить только из отчётов</p>
+                    </div>
+                  </label>
 
                   <Dropzone 
                     accept={{ 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': ['.xlsx'] }}

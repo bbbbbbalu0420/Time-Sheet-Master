@@ -15,6 +15,10 @@ export interface EmployeeResult {
   totalHours: number;
   salary: number;
   overtime: number;
+  nightPay?: number;
+  basePay?: number;
+  overtimePay?: number;
+  uncappedSalary?: number;
   dayHours?: EmployeeResultDayHours;
   existingHours?: EmployeeResultExistingHours;
   newHours?: EmployeeResultNewHours;
