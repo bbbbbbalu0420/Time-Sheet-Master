@@ -101,6 +101,7 @@ Generated React Query hooks and fetch client from the OpenAPI spec.
 - **Total salary**: basePay + overtimePay + nightPay, capped at 24,500
 - **2026 production calendar norms (40-hour week)**: Jan=120h, Feb=152h, Mar=168h, Apr=175h, May=151h, Jun=167h, Jul=184h, Aug=168h, Sep=176h, Oct=176h, Nov=159h, Dec=176h
 - **Clear hours option**: When uploading master file, optionally clear all existing hours (default: enabled). Only report hours are used.
+- **Schedule generation**: For all working employees, system auto-generates 22-hour shifts every other day (alternating odd/even days per employee index). Target ~362h/month (16-17 days × 22h). Report hours are merged in; generated days fill remaining slots up to target.
 - **Hours per employee**: Target 350-375 hours/month, 22-hour shifts, work every other day
 - **Fired before 17th**: 0 hours/salary
 - **Fired on/after 17th**: only hours up to dismissal date counted

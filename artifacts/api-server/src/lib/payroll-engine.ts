@@ -479,11 +479,54 @@ export async function processReport(
   return { records, matchedEmployees: matched, unmatchedEmployees: unmatched };
 }
 
+const SHIFT_HOURS = 22;
+const TARGET_HOURS_MIN = 350;
+const TARGET_HOURS_MAX = 375;
+
+function getDaysInMonth(month: number, year: number = 2026): number {
+  return new Date(year, month, 0).getDate();
+}
+
+function generateSchedule(
+  empIndex: number,
+  month: number,
+  existingDays: Set<number>,
+  maxDay: number = 31,
+): Record<number, number> {
+  const daysInMonth = Math.min(getDaysInMonth(month), maxDay);
+  const schedule: Record<number, number> = {};
+
+  const startDay = (empIndex % 2 === 0) ? 1 : 2;
+
+  const targetTotalDays = Math.round((TARGET_HOURS_MIN + TARGET_HOURS_MAX) / 2 / SHIFT_HOURS);
+  const needDays = Math.max(0, targetTotalDays - existingDays.size);
+
+  if (needDays === 0) return schedule;
+
+  const candidates: number[] = [];
+  for (let d = startDay; d <= daysInMonth; d += 2) {
+    if (!existingDays.has(d)) candidates.push(d);
+  }
+  if (candidates.length < needDays) {
+    for (let d = (startDay === 1 ? 2 : 1); d <= daysInMonth; d += 2) {
+      if (!existingDays.has(d)) candidates.push(d);
+    }
+  }
+
+  for (let i = 0; i < Math.min(needDays, candidates.length); i++) {
+    schedule[candidates[i]] = SHIFT_HOURS;
+  }
+
+  return schedule;
+}
+
 export async function processPayroll(): Promise<EmployeeResult[]> {
   const month = currentSession.month;
   const normHours = WORK_HOURS_NORM_2026[month] || 167;
   const hourCost = SALARY_BASE / normHours;
   const results: EmployeeResult[] = [];
+
+  let empIndex = 0;
 
   for (const emp of currentSession.employees) {
     const existingHours = { ...emp.existingHours };
@@ -522,6 +565,8 @@ export async function processPayroll(): Promise<EmployeeResult[]> {
       continue;
     }
 
+    let maxDay = getDaysInMonth(month);
+
     if (emp.status === "УВОЛЕН" && emp.dismissDate) {
       const dd = new Date(emp.dismissDate);
       if (dd.getMonth() + 1 === month) {
@@ -529,10 +574,10 @@ export async function processPayroll(): Promise<EmployeeResult[]> {
           results.push({ ...zeroResult(emp.status), newHours });
           continue;
         } else {
-          const cutoff = dd.getDate();
+          maxDay = dd.getDate();
           const filtered: Record<number, number> = {};
           for (const [d, h] of Object.entries(mergedHours)) {
-            if (parseInt(d) <= cutoff) filtered[parseInt(d)] = h;
+            if (parseInt(d) <= maxDay) filtered[parseInt(d)] = h;
           }
           mergedHours = filtered;
         }
@@ -558,6 +603,18 @@ export async function processPayroll(): Promise<EmployeeResult[]> {
       if (Object.keys(mergedHours).length === 0) {
         results.push(zeroResult(emp.status));
         continue;
+      }
+    }
+
+    const existingDays = new Set(Object.keys(mergedHours).map(Number));
+    const generated = generateSchedule(empIndex, month, existingDays, maxDay);
+    empIndex++;
+
+    for (const [dayStr, hrs] of Object.entries(generated)) {
+      const d = parseInt(dayStr);
+      if (!mergedHours[d]) {
+        mergedHours[d] = hrs;
+        newHours[d] = hrs;
       }
     }
 
