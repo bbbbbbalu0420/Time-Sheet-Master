@@ -13,7 +13,6 @@ export interface PayrollStatus {
   month?: number | null;
   monthName?: string | null;
   normHours?: number | null;
-  hourCost?: number | null;
   employeeCount: number;
   uploadedReports: string[];
   isProcessed: boolean;

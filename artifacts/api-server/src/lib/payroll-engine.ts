@@ -2,13 +2,13 @@ import ExcelJS from "exceljs";
 import path from "path";
 import fs from "fs";
 
-const SALARY_BASE = 5000.0;
+const DEFAULT_SALARY = 4500.0;
 const SALARY_LIMIT = 24_500.0;
 
 const WORK_HOURS_NORM_2026: Record<number, number> = {
-  1: 136, 2: 151, 3: 167, 4: 175,
-  5: 143, 6: 167, 7: 184, 8: 168,
-  9: 176, 10: 176, 11: 159, 12: 175,
+  1: 120, 2: 152, 3: 168, 4: 175,
+  5: 151, 6: 167, 7: 184, 8: 168,
+  9: 176, 10: 176, 11: 159, 12: 176,
 };
 
 const MONTH_NAMES_RU: Record<number, string> = {
@@ -17,6 +17,8 @@ const MONTH_NAMES_RU: Record<number, string> = {
   9: "Сентябрь", 10: "Октябрь", 11: "Ноябрь", 12: "Декабрь",
 };
 
+const SALARY_COL = 70;
+
 export interface EmployeeInfo {
   fio: string;
   rawFio: string;
@@ -24,6 +26,7 @@ export interface EmployeeInfo {
   dismissDate: string | null;
   sickEnd: Date | null;
   row: number;
+  salary: number;
   existingHours: Record<number, number>;
   totalExistingHours: number;
 }
@@ -35,6 +38,16 @@ export interface EmployeeResult {
   salary: number;
   overtime: number;
   dayHours: Record<number, number>;
+  existingHours: Record<number, number>;
+  newHours: Record<number, number>;
+  employeeSalary: number;
+  normHours: number;
+  hourCost: number;
+}
+
+interface DayColumns {
+  col1: number;
+  col2: number;
 }
 
 export interface PayrollSession {
@@ -42,7 +55,7 @@ export interface PayrollSession {
   masterFileName: string | null;
   month: number;
   employees: EmployeeInfo[];
-  dayColMap: Record<number, number>;
+  dayColPairs: Record<number, DayColumns>;
   headerRow: number;
   uploadedReports: string[];
   reportHours: Record<string, Record<number, number>>;
@@ -57,7 +70,7 @@ export function createSession(): PayrollSession {
     masterFileName: null,
     month: 1,
     employees: [],
-    dayColMap: {},
+    dayColPairs: {},
     headerRow: 0,
     uploadedReports: [],
     reportHours: {},
@@ -95,31 +108,31 @@ function parseEmployeeStatus(rawFio: string): {
   let dismissDate: Date | null = null;
   let sickEnd: Date | null = null;
 
-  const dismissMatch = upper.match(/УВОЛ[^\d]*(\d{1,2})[./](\d{2})[./](\d{2,4})/);
+  if (upper.includes("ЗА СВОЙ СЧЕТ") || upper.includes("ЗА СВОЙ СЧЁТ")) {
+    return { status: "ЗА СВОЙ СЧЁТ", dismissDate, sickEnd };
+  }
+
+  const dismissMatch = upper.match(/УВОЛ[^\d]*(\d{1,2})[./](\d{1,2})[./](\d{2,4})/);
   if (dismissMatch) {
     const day = parseInt(dismissMatch[1]);
     const mon = parseInt(dismissMatch[2]);
     let yr = parseInt(dismissMatch[3]);
     if (yr < 100) yr += 2000;
-    try {
-      dismissDate = new Date(yr, mon - 1, day);
-    } catch {}
+    try { dismissDate = new Date(yr, mon - 1, day); } catch {}
     return { status: "УВОЛЕН", dismissDate, sickEnd };
   }
 
-  const sickMatch = upper.match(/БОЛН[^\d]*(?:ДО\s*)?(\d{1,2})[./](\d{2})[./](\d{2,4})/);
+  const sickMatch = upper.match(/БОЛ[НЬ]?[^\d]*(?:ДО\s*)?(\d{1,2})[./](\d{1,2})[./](\d{2,4})/);
   if (sickMatch) {
     const day = parseInt(sickMatch[1]);
     const mon = parseInt(sickMatch[2]);
     let yr = parseInt(sickMatch[3]);
     if (yr < 100) yr += 2000;
-    try {
-      sickEnd = new Date(yr, mon - 1, day);
-    } catch {}
+    try { sickEnd = new Date(yr, mon - 1, day); } catch {}
     return { status: "БОЛЬНИЧНЫЙ", dismissDate, sickEnd };
   }
 
-  if (upper.includes("БОЛН")) return { status: "БОЛЬНИЧНЫЙ", dismissDate, sickEnd };
+  if (upper.includes("БОЛН") || upper.includes("-БОЛ")) return { status: "БОЛЬНИЧНЫЙ", dismissDate, sickEnd };
   if (upper.includes("ОТПУСК") || upper.includes("ОТП")) return { status: "ОТПУСК", dismissDate, sickEnd };
 
   return { status: "РАБОТАЕТ", dismissDate, sickEnd };
@@ -127,7 +140,7 @@ function parseEmployeeStatus(rawFio: string): {
 
 export async function parseMasterFile(buffer: Buffer, month: number): Promise<{
   employees: EmployeeInfo[];
-  dayColMap: Record<number, number>;
+  dayColPairs: Record<number, DayColumns>;
   headerRow: number;
 }> {
   const wb = new ExcelJS.Workbook();
@@ -135,29 +148,33 @@ export async function parseMasterFile(buffer: Buffer, month: number): Promise<{
   const ws = wb.worksheets[0];
 
   let headerRow = 0;
-  const dayColMap: Record<number, number> = {};
+  const dayColPairs: Record<number, DayColumns> = {};
 
   for (let rowIdx = 1; rowIdx <= 10; rowIdx++) {
     const row = ws.getRow(rowIdx);
-    const dayVals: number[] = [];
     const dayAllCols: Record<number, number[]> = {};
+    let dayCount = 0;
 
     for (let col = 1; col <= (row.cellCount || 100); col++) {
       const val = row.getCell(col).value;
       const numVal = typeof val === "number" ? val : null;
       if (numVal !== null && numVal >= 1 && numVal <= 31) {
-        dayVals.push(numVal);
         const day = Math.floor(numVal);
         if (!dayAllCols[day]) dayAllCols[day] = [];
         dayAllCols[day].push(col);
+        dayCount++;
       }
     }
 
-    if (dayVals.length >= 20) {
+    if (dayCount >= 20) {
       headerRow = rowIdx;
       for (const [day, cols] of Object.entries(dayAllCols)) {
         const d = parseInt(day);
-        dayColMap[d] = cols.length >= 2 ? cols[1] : cols[0];
+        if (cols.length >= 2) {
+          dayColPairs[d] = { col1: cols[0], col2: cols[1] };
+        } else {
+          dayColPairs[d] = { col1: cols[0], col2: cols[0] };
+        }
       }
       break;
     }
@@ -169,26 +186,47 @@ export async function parseMasterFile(buffer: Buffer, month: number): Promise<{
 
   const employees: EmployeeInfo[] = [];
   const fioCol = 2;
+  let consecutiveEmpty = 0;
 
   for (let rowIdx = headerRow + 2; rowIdx <= ws.rowCount; rowIdx++) {
     const row = ws.getRow(rowIdx);
     const cellFio = row.getCell(fioCol).value;
 
-    if (!cellFio || typeof cellFio !== "string") continue;
+    if (!cellFio || typeof cellFio !== "string" || !cellFio.trim()) {
+      consecutiveEmpty++;
+      if (consecutiveEmpty >= 3) break;
+      continue;
+    }
+    consecutiveEmpty = 0;
+
     const fioStr = cellFio.trim();
-    if (!fioStr) continue;
+    const lower = fioStr.toLowerCase();
+    if (lower.includes("бухгалтер") || lower.includes("руководитель") || lower.includes("главн")) continue;
 
     const { status, dismissDate, sickEnd } = parseEmployeeStatus(fioStr);
     const fioClean = extractCleanFio(fioStr);
+    if (!fioClean || fioClean.length < 2) continue;
+
+    let empSalary = DEFAULT_SALARY;
+    const salaryCell = row.getCell(SALARY_COL).value;
+    if (typeof salaryCell === "number" && salaryCell > 0) {
+      empSalary = salaryCell;
+    }
 
     const existingHours: Record<number, number> = {};
     let totalExisting = 0;
-    for (const [dayStr, col] of Object.entries(dayColMap)) {
+    for (const [dayStr, pair] of Object.entries(dayColPairs)) {
       const day = parseInt(dayStr);
-      const cellVal = row.getCell(col).value;
-      if (typeof cellVal === "number" && cellVal > 0) {
-        existingHours[day] = cellVal;
-        totalExisting += cellVal;
+      let dayTotal = 0;
+      const v1 = row.getCell(pair.col1).value;
+      if (typeof v1 === "number" && v1 > 0) dayTotal += v1;
+      if (pair.col2 !== pair.col1) {
+        const v2 = row.getCell(pair.col2).value;
+        if (typeof v2 === "number" && v2 > 0) dayTotal += v2;
+      }
+      if (dayTotal > 0) {
+        existingHours[day] = dayTotal;
+        totalExisting += dayTotal;
       }
     }
 
@@ -199,12 +237,13 @@ export async function parseMasterFile(buffer: Buffer, month: number): Promise<{
       dismissDate: dismissDate ? dismissDate.toISOString().split("T")[0] : null,
       sickEnd,
       row: rowIdx,
+      salary: empSalary,
       existingHours,
       totalExistingHours: Math.round(totalExisting * 10) / 10,
     });
   }
 
-  return { employees, dayColMap, headerRow };
+  return { employees, dayColPairs, headerRow };
 }
 
 export async function uploadMaster(buffer: Buffer, month: number, fileName: string) {
@@ -217,11 +256,10 @@ export async function uploadMaster(buffer: Buffer, month: number, fileName: stri
 
   const parsed = await parseMasterFile(buffer, month);
   currentSession.employees = parsed.employees;
-  currentSession.dayColMap = parsed.dayColMap;
+  currentSession.dayColPairs = parsed.dayColPairs;
   currentSession.headerRow = parsed.headerRow;
 
   const normHours = WORK_HOURS_NORM_2026[month] || 167;
-  const hourCost = Math.round((SALARY_BASE / normHours) * 10000) / 10000;
 
   return {
     success: true,
@@ -230,12 +268,12 @@ export async function uploadMaster(buffer: Buffer, month: number, fileName: stri
     month,
     monthName: MONTH_NAMES_RU[month] || "",
     normHours,
-    hourCost,
     employees: parsed.employees.map((e) => ({
       fio: e.fio,
       rawFio: e.rawFio,
       status: e.status,
       dismissDate: e.dismissDate,
+      salary: e.salary,
       existingHours: e.existingHours,
       totalExistingHours: e.totalExistingHours,
     })),
@@ -243,49 +281,64 @@ export async function uploadMaster(buffer: Buffer, month: number, fileName: stri
 }
 
 function normalizeFio(fio: string): string {
-  return fio.toUpperCase().trim().replace(/\s+/g, " ");
+  return fio.toUpperCase().trim().replace(/\s+/g, " ").replace(/\./g, "");
+}
+
+function extractSurname(fio: string): string {
+  return fio.split(/[\s.]+/)[0] || "";
+}
+
+function extractInitials(fio: string): string[] {
+  const parts = fio.split(/[\s]+/);
+  const initials: string[] = [];
+  for (let i = 1; i < parts.length; i++) {
+    const p = parts[i].replace(/\./g, "");
+    if (p.length > 0) {
+      if (p.length <= 2) {
+        for (const ch of p) initials.push(ch);
+      } else {
+        initials.push(p[0]);
+      }
+    }
+  }
+  return initials;
 }
 
 function fuzzyMatchFio(
   reportFio: string,
   masterKeys: Record<string, string>,
 ): string | null {
-  const partsReport = reportFio.split(" ");
-  if (!partsReport.length) return null;
-  const surnameReport = partsReport[0];
-  const initialReport = partsReport.length > 1 ? partsReport[1][0] : "";
+  const normReport = normalizeFio(reportFio);
+  const surnameReport = extractSurname(normReport);
+  const initialsReport = extractInitials(normReport);
 
   let best: string | null = null;
   let bestScore = 0;
 
   for (const normMaster of Object.keys(masterKeys)) {
-    const partsMaster = normMaster.split(" ");
-    if (!partsMaster.length) continue;
-    const surnameMaster = partsMaster[0];
+    const surnameMaster = extractSurname(normMaster);
 
     let score = 0;
     if (surnameReport === surnameMaster) {
       score = 10;
     } else if (
-      surnameReport.includes(surnameMaster) ||
-      surnameMaster.includes(surnameReport)
+      surnameReport.length >= 3 && surnameMaster.length >= 3 &&
+      (surnameReport.includes(surnameMaster) || surnameMaster.includes(surnameReport))
     ) {
-      score = 5;
+      score = 7;
     } else {
       const minLen = Math.min(surnameReport.length, surnameMaster.length, 4);
-      if (
-        minLen >= 3 &&
-        surnameReport.substring(0, minLen) ===
-          surnameMaster.substring(0, minLen)
-      ) {
-        score = 3;
+      if (minLen >= 3 && surnameReport.substring(0, minLen) === surnameMaster.substring(0, minLen)) {
+        score = 4;
       } else {
         continue;
       }
     }
 
-    if (initialReport && partsMaster.length > 1) {
-      if (partsMaster[1][0] === initialReport) score += 3;
+    const initialsMaster = extractInitials(normMaster);
+    if (initialsReport.length > 0 && initialsMaster.length > 0) {
+      if (initialsReport[0] === initialsMaster[0]) score += 3;
+      if (initialsReport.length > 1 && initialsMaster.length > 1 && initialsReport[1] === initialsMaster[1]) score += 2;
     }
 
     if (score > bestScore) {
@@ -312,20 +365,21 @@ export async function processReport(
   const ws = wb.worksheets[0];
   const headers: string[] = [];
   const headerRow = ws.getRow(1);
-  for (let col = 1; col <= (headerRow.cellCount || 10); col++) {
+  for (let col = 1; col <= (headerRow.cellCount || 20); col++) {
     const v = headerRow.getCell(col).value;
     headers.push(String(v || "").trim().toUpperCase());
   }
 
   let dateCol = -1, cashierCol = -1, hoursCol = -1;
   for (let i = 0; i < headers.length; i++) {
-    if (headers[i].includes("ДАТА") || headers[i].includes("DATE")) dateCol = i + 1;
-    if (headers[i].includes("КАССИР") || headers[i].includes("ФИО") || headers[i].includes("CASHIER")) cashierCol = i + 1;
-    if (headers[i].includes("НАЧИСЛЕНО") || headers[i].includes("HOURS") || headers[i].includes("CHARGE")) hoursCol = i + 1;
+    const h = headers[i];
+    if (dateCol === -1 && (h.includes("ДАТА") || h.includes("DATE"))) dateCol = i + 1;
+    if (cashierCol === -1 && (h.includes("КАССИР") || h.includes("ФИО") || h.includes("CASHIER") || h.includes("СОТРУДНИК"))) cashierCol = i + 1;
+    if (h.includes("НАЧИСЛЕНО") || h.includes("ОКРУГЛЕНИЕ") || h === "HOURS" || h === "CHARGE") hoursCol = i + 1;
   }
 
   if (dateCol === -1 || cashierCol === -1 || hoursCol === -1) {
-    throw new Error(`Не найдены необходимые столбцы в файле ${fileName}. Нужны: Дата открытия, Кассир, НАЧИСЛЕНО`);
+    throw new Error(`Не найдены необходимые столбцы в файле ${fileName}. Ожидаются: Дата открытия, Кассир, НАЧИСЛЕНО. Найдены: ${headers.filter(h => h).join(', ')}`);
   }
 
   const fileHours: Record<string, Record<number, number>> = {};
@@ -340,7 +394,14 @@ export async function processReport(
     if (rawDate instanceof Date) {
       dt = rawDate;
     } else if (typeof rawDate === "string") {
-      dt = new Date(rawDate);
+      const parts = rawDate.match(/(\d{1,2})[./](\d{1,2})[./](\d{2,4})/);
+      if (parts) {
+        let yr = parseInt(parts[3]);
+        if (yr < 100) yr += 2000;
+        dt = new Date(yr, parseInt(parts[2]) - 1, parseInt(parts[1]));
+      } else {
+        dt = new Date(rawDate);
+      }
     } else if (typeof rawDate === "number") {
       dt = new Date(Math.round((rawDate - 25569) * 86400 * 1000));
     }
@@ -350,11 +411,23 @@ export async function processReport(
 
     const day = dt.getDate();
     const rawFio = String(row.getCell(cashierCol).value || "").trim().toUpperCase();
-    if (!rawFio || rawFio === "NAN" || rawFio.includes("СИС. АДМИНИСТРАТОР")) continue;
+    if (!rawFio || rawFio === "NAN" || rawFio.includes("СИС. АДМИНИСТРАТОР") || rawFio.includes("ИТОГО")) continue;
 
     const rawHours = row.getCell(hoursCol).value;
     if (rawHours === null || rawHours === undefined) continue;
-    const hours = typeof rawHours === "number" ? rawHours : parseFloat(String(rawHours));
+
+    let hours: number;
+    if (typeof rawHours === "number") {
+      hours = rawHours;
+    } else {
+      const strH = String(rawHours).replace(",", ".");
+      const timeMatch = strH.match(/^(\d+):(\d+)$/);
+      if (timeMatch) {
+        hours = parseInt(timeMatch[1]) + parseInt(timeMatch[2]) / 60;
+      } else {
+        hours = parseFloat(strH);
+      }
+    }
     if (isNaN(hours) || hours <= 0) continue;
 
     if (!fileHours[rawFio]) fileHours[rawFio] = {};
@@ -372,13 +445,12 @@ export async function processReport(
 
   for (const [reportFio, dayHours] of Object.entries(fileHours)) {
     const normReport = normalizeFio(reportFio);
-
     let masterFio: string | null = null;
     if (masterKeys[normReport]) {
       masterFio = masterKeys[normReport];
     } else {
-      const fuzzy = fuzzyMatchFio(normReport, masterKeys);
-      if (fuzzy) masterFio = masterKeys[fuzzy];
+      const fuzzyResult = fuzzyMatchFio(normReport, masterKeys);
+      if (fuzzyResult) masterFio = masterKeys[fuzzyResult];
     }
 
     if (masterFio) {
@@ -408,48 +480,68 @@ export async function processReport(
 export async function processPayroll(): Promise<EmployeeResult[]> {
   const month = currentSession.month;
   const normHours = WORK_HOURS_NORM_2026[month] || 167;
-  const hourCost = SALARY_BASE / normHours;
-
-  const lastDay = new Date(2026, month, 0).getDate();
   const results: EmployeeResult[] = [];
 
   for (const emp of currentSession.employees) {
-    let rawHours: Record<number, number> = {
-      ...(currentSession.reportHours[emp.fio] || {}),
-    };
+    const empSalary = emp.salary || DEFAULT_SALARY;
+    const hourCost = empSalary / normHours;
+
+    const existingHours = { ...emp.existingHours };
+    const reportHoursForEmp = currentSession.reportHours[emp.fio] || {};
+    const newHours: Record<number, number> = {};
+
+    for (const [dayStr, hrs] of Object.entries(reportHoursForEmp)) {
+      const d = parseInt(dayStr);
+      if (!existingHours[d]) {
+        newHours[d] = hrs;
+      } else if (hrs > existingHours[d]) {
+        newHours[d] = hrs;
+      }
+    }
+
+    let mergedHours: Record<number, number> = { ...existingHours };
+    for (const [dayStr, hrs] of Object.entries(newHours)) {
+      mergedHours[parseInt(dayStr)] = hrs;
+    }
+
+    if (emp.status === "ЗА СВОЙ СЧЁТ") {
+      results.push({
+        fio: emp.fio, status: emp.status,
+        totalHours: 0, salary: 0, overtime: 0,
+        dayHours: {}, existingHours, newHours: {},
+        employeeSalary: empSalary, normHours, hourCost,
+      });
+      continue;
+    }
 
     if (emp.status === "УВОЛЕН" && emp.dismissDate) {
       const dd = new Date(emp.dismissDate);
       if (dd.getMonth() + 1 === month) {
         if (dd.getDate() < 17) {
           results.push({
-            fio: emp.fio,
-            status: emp.status,
-            totalHours: 0,
-            salary: 0,
-            overtime: 0,
-            dayHours: {},
+            fio: emp.fio, status: emp.status,
+            totalHours: 0, salary: 0, overtime: 0,
+            dayHours: {}, existingHours, newHours,
+            employeeSalary: empSalary, normHours, hourCost,
           });
           continue;
         } else {
           const cutoff = dd.getDate();
           const filtered: Record<number, number> = {};
-          for (const [d, h] of Object.entries(rawHours)) {
+          for (const [d, h] of Object.entries(mergedHours)) {
             if (parseInt(d) <= cutoff) filtered[parseInt(d)] = h;
           }
-          rawHours = filtered;
+          mergedHours = filtered;
         }
       }
     }
 
     if (emp.status === "ОТПУСК") {
       results.push({
-        fio: emp.fio,
-        status: emp.status,
-        totalHours: 0,
-        salary: 0,
-        overtime: 0,
-        dayHours: {},
+        fio: emp.fio, status: emp.status,
+        totalHours: 0, salary: 0, overtime: 0,
+        dayHours: {}, existingHours, newHours,
+        employeeSalary: empSalary, normHours, hourCost,
       });
       continue;
     }
@@ -459,31 +551,29 @@ export async function processPayroll(): Promise<EmployeeResult[]> {
         if (emp.sickEnd.getMonth() + 1 === month) {
           const cutoff = emp.sickEnd.getDate();
           const filtered: Record<number, number> = {};
-          for (const [d, h] of Object.entries(rawHours)) {
+          for (const [d, h] of Object.entries(mergedHours)) {
             if (parseInt(d) > cutoff) filtered[parseInt(d)] = h;
           }
-          rawHours = filtered;
+          mergedHours = filtered;
         } else {
-          rawHours = {};
+          mergedHours = {};
         }
       } else {
-        rawHours = {};
+        mergedHours = {};
       }
 
-      if (Object.keys(rawHours).length === 0) {
+      if (Object.keys(mergedHours).length === 0) {
         results.push({
-          fio: emp.fio,
-          status: emp.status,
-          totalHours: 0,
-          salary: 0,
-          overtime: 0,
-          dayHours: {},
+          fio: emp.fio, status: emp.status,
+          totalHours: 0, salary: 0, overtime: 0,
+          dayHours: {}, existingHours, newHours,
+          employeeSalary: empSalary, normHours, hourCost,
         });
         continue;
       }
     }
 
-    let totalHours = Object.values(rawHours).reduce((s, h) => s + h, 0);
+    let totalHours = Object.values(mergedHours).reduce((s, h) => s + h, 0);
     let overtime = 0;
     let salary = 0;
 
@@ -497,22 +587,22 @@ export async function processPayroll(): Promise<EmployeeResult[]> {
     if (salary > SALARY_LIMIT) {
       if (totalHours <= normHours) {
         const scale = SALARY_LIMIT / salary;
-        const newHours: Record<number, number> = {};
-        for (const [d, h] of Object.entries(rawHours)) {
-          newHours[parseInt(d)] = Math.round(h * scale * 10) / 10;
+        const newMerged: Record<number, number> = {};
+        for (const [d, h] of Object.entries(mergedHours)) {
+          newMerged[parseInt(d)] = Math.round(h * scale * 10) / 10;
         }
-        rawHours = newHours;
+        mergedHours = newMerged;
       } else {
-        const maxOvertime = (SALARY_LIMIT - SALARY_BASE) / (2 * hourCost);
+        const maxOvertime = (SALARY_LIMIT - empSalary) / (2 * hourCost);
         const maxTotal = normHours + maxOvertime;
         const scale = maxTotal / totalHours;
-        const newHours: Record<number, number> = {};
-        for (const [d, h] of Object.entries(rawHours)) {
-          newHours[parseInt(d)] = Math.round(h * scale * 10) / 10;
+        const newMerged: Record<number, number> = {};
+        for (const [d, h] of Object.entries(mergedHours)) {
+          newMerged[parseInt(d)] = Math.round(h * scale * 10) / 10;
         }
-        rawHours = newHours;
+        mergedHours = newMerged;
       }
-      totalHours = Object.values(rawHours).reduce((s, h) => s + h, 0);
+      totalHours = Object.values(mergedHours).reduce((s, h) => s + h, 0);
       overtime = Math.max(0, totalHours - normHours);
       salary = SALARY_LIMIT;
     }
@@ -523,7 +613,12 @@ export async function processPayroll(): Promise<EmployeeResult[]> {
       totalHours: Math.round(totalHours * 10) / 10,
       salary: Math.round(salary * 100) / 100,
       overtime: Math.round(overtime * 10) / 10,
-      dayHours: rawHours,
+      dayHours: mergedHours,
+      existingHours,
+      newHours,
+      employeeSalary: empSalary,
+      normHours,
+      hourCost: Math.round(hourCost * 100) / 100,
     });
   }
 
@@ -551,26 +646,39 @@ export async function generateResultFile(): Promise<Buffer> {
     const emp = currentSession.employees.find((e) => e.fio === result.fio);
     if (!emp) continue;
 
-    for (const [dayStr, hours] of Object.entries(result.dayHours)) {
+    for (const [dayStr, hours] of Object.entries(result.newHours)) {
       const day = parseInt(dayStr);
-      const col = currentSession.dayColMap[day];
-      if (!col) continue;
+      const pair = currentSession.dayColPairs[day];
+      if (!pair) continue;
 
-      const cell = ws.getRow(emp.row).getCell(col);
+      const writeCol = pair.col2;
+      const cell = ws.getRow(emp.row).getCell(writeCol);
       cell.value = Math.round(hours * 10) / 10;
 
-      if (result.status === "УВОЛЕН") {
+      const isNew = !result.existingHours[day];
+      if (isNew) {
         cell.fill = {
           type: "pattern",
           pattern: "solid",
-          fgColor: { argb: "FFFF0000" },
+          fgColor: { argb: "FF90EE90" },
         };
-      } else if (result.status === "ОТПУСК" || result.status === "БОЛЬНИЧНЫЙ") {
-        cell.fill = {
-          type: "pattern",
-          pattern: "solid",
-          fgColor: { argb: "FFFFFF00" },
+      }
+    }
+
+    if (result.status === "УВОЛЕН") {
+      for (const [dayStr] of Object.entries(result.dayHours)) {
+        const day = parseInt(dayStr);
+        const pair = currentSession.dayColPairs[day];
+        if (!pair) continue;
+        const cell1 = ws.getRow(emp.row).getCell(pair.col1);
+        const cell2 = ws.getRow(emp.row).getCell(pair.col2);
+        const redFill = {
+          type: "pattern" as const,
+          pattern: "solid" as const,
+          fgColor: { argb: "FFFF6B6B" },
         };
+        if (cell1.value) cell1.fill = redFill;
+        if (cell2.value) cell2.fill = redFill;
       }
     }
   }
@@ -581,15 +689,12 @@ export async function generateResultFile(): Promise<Buffer> {
 }
 
 export function getMonthInfo(month: number) {
+  const normHours = WORK_HOURS_NORM_2026[month] || 167;
   return {
     name: MONTH_NAMES_RU[month] || "",
-    normHours: WORK_HOURS_NORM_2026[month] || 167,
-    hourCost:
-      Math.round((SALARY_BASE / (WORK_HOURS_NORM_2026[month] || 167)) * 10000) /
-      10000,
-    salaryBase: SALARY_BASE,
+    normHours,
     salaryLimit: SALARY_LIMIT,
   };
 }
 
-export { MONTH_NAMES_RU, WORK_HOURS_NORM_2026, SALARY_BASE, SALARY_LIMIT };
+export { MONTH_NAMES_RU, WORK_HOURS_NORM_2026, DEFAULT_SALARY, SALARY_LIMIT };

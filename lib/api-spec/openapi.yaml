@@ -165,13 +165,11 @@ components:
           type: string
         normHours:
           type: integer
-        hourCost:
-          type: number
         employees:
           type: array
           items:
             $ref: "#/components/schemas/EmployeeInfo"
-      required: [success, message, employeeCount, month, monthName, normHours, hourCost, employees]
+      required: [success, message, employeeCount, month, monthName, normHours, employees]
     EmployeeInfo:
       type: object
       properties:
@@ -184,6 +182,8 @@ components:
         dismissDate:
           type: string
           nullable: true
+        salary:
+          type: number
         existingHours:
           type: object
           additionalProperties:
@@ -244,6 +244,20 @@ components:
           type: object
           additionalProperties:
             type: number
+        existingHours:
+          type: object
+          additionalProperties:
+            type: number
+        newHours:
+          type: object
+          additionalProperties:
+            type: number
+        employeeSalary:
+          type: number
+        normHours:
+          type: number
+        hourCost:
+          type: number
       required: [fio, status, totalHours, salary, overtime]
     PayrollStatus:
       type: object
@@ -258,9 +272,6 @@ components:
           nullable: true
         normHours:
           type: integer
-          nullable: true
-        hourCost:
-          type: number
           nullable: true
         employeeCount:
           type: integer

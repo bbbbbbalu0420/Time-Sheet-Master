@@ -14,6 +14,5 @@ export interface MasterUploadResponse {
   month: number;
   monthName: string;
   normHours: number;
-  hourCost: number;
   employees: EmployeeInfo[];
 }

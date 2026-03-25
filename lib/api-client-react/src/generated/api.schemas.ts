@@ -21,6 +21,7 @@ export interface EmployeeInfo {
   rawFio: string;
   status: string;
   dismissDate?: string | null;
+  salary?: number;
   existingHours?: EmployeeInfoExistingHours;
   totalExistingHours: number;
 }
@@ -32,7 +33,6 @@ export interface MasterUploadResponse {
   month: number;
   monthName: string;
   normHours: number;
-  hourCost: number;
   employees: EmployeeInfo[];
 }
 
@@ -48,6 +48,10 @@ export interface ReportsUploadResponse {
 
 export type EmployeeResultDayHours = { [key: string]: number };
 
+export type EmployeeResultExistingHours = { [key: string]: number };
+
+export type EmployeeResultNewHours = { [key: string]: number };
+
 export interface EmployeeResult {
   fio: string;
   status: string;
@@ -55,6 +59,11 @@ export interface EmployeeResult {
   salary: number;
   overtime: number;
   dayHours?: EmployeeResultDayHours;
+  existingHours?: EmployeeResultExistingHours;
+  newHours?: EmployeeResultNewHours;
+  employeeSalary?: number;
+  normHours?: number;
+  hourCost?: number;
 }
 
 export interface ProcessResponse {
@@ -68,7 +77,6 @@ export interface PayrollStatus {
   month?: number | null;
   monthName?: string | null;
   normHours?: number | null;
-  hourCost?: number | null;
   employeeCount: number;
   uploadedReports: string[];
   isProcessed: boolean;

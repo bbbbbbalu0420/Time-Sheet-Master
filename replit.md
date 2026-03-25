@@ -59,64 +59,53 @@ Express 5 API server. Routes live in `src/routes/` and use `@workspace/api-zod` 
 - App setup: `src/app.ts` — mounts CORS, JSON/urlencoded parsing, routes at `/api`
 - Routes: `src/routes/index.ts` mounts sub-routers; `src/routes/health.ts` exposes `GET /health` (full path: `/api/health`)
 - **Payroll routes** (`src/routes/payroll.ts`): `POST /api/payroll/upload-master`, `POST /api/payroll/upload-reports`, `POST /api/payroll/process`, `GET /api/payroll/download`, `GET /api/payroll/status`, `POST /api/payroll/reset`
-- **Payroll engine** (`src/lib/payroll-engine.ts`): Business logic for salary calculation using ExcelJS. In-memory session state. Rules: SALARY_BASE=5000 RUB, SALARY_LIMIT=24500 RUB, 2026 production calendar norms, overtime at 2x rate, fired before 17th = 0 hours, vacation/sick = 0 hours (unless sick-end date specified).
+- **Payroll engine** (`src/lib/payroll-engine.ts`): Business logic for salary calculation using ExcelJS. In-memory session state.
 - Depends on: `@workspace/db`, `@workspace/api-zod`, `exceljs`, `multer`
 - `pnpm --filter @workspace/api-server run dev` — run the dev server
 - `pnpm --filter @workspace/api-server run build` — production esbuild bundle (`dist/index.cjs`)
-- Build bundles an allowlist of deps (express, cors, pg, drizzle-orm, zod, etc.) and externalizes the rest
 
 ### `artifacts/payroll-app` (`@workspace/payroll-app`)
 
 React + Vite frontend for the "ММ Расчёт Графика" payroll schedule calculator. All UI is in Russian. Dark professional theme with glass-morphism effects.
 
 - Entry: `src/main.tsx` → `src/App.tsx` → `src/pages/Home.tsx`
-- Key components: `StepIndicator` (3-step wizard), `Dropzone` (drag-drop file upload), `ResultsTable` (sortable salary results table)
+- Key components: `StepIndicator` (3-step wizard), `Dropzone` (drag-drop file upload), `ResultsTable` (sortable salary results table with existing/new hours breakdown)
 - Hooks: `src/hooks/use-payroll.ts` — wraps generated React Query hooks for payroll API, includes file download logic
 - Uses: `@workspace/api-client-react` for generated hooks, `react-dropzone`, `framer-motion`, `@tanstack/react-table`, `lucide-react`
-- `pnpm --filter @workspace/payroll-app run dev` — Vite dev server
 
 ### `lib/db` (`@workspace/db`)
 
-Database layer using Drizzle ORM with PostgreSQL. Exports a Drizzle client instance and schema models.
-
-- `src/index.ts` — creates a `Pool` + Drizzle instance, exports schema
-- `src/schema/index.ts` — barrel re-export of all models
-- `src/schema/<modelname>.ts` — table definitions with `drizzle-zod` insert schemas (no models definitions exist right now)
-- `drizzle.config.ts` — Drizzle Kit config (requires `DATABASE_URL`, automatically provided by Replit)
-- Exports: `.` (pool, db, schema), `./schema` (schema only)
-
-Production migrations are handled by Replit when publishing. In development, we just use `pnpm --filter @workspace/db run push`, and we fallback to `pnpm --filter @workspace/db run push-force`.
+Database layer using Drizzle ORM with PostgreSQL.
 
 ### `lib/api-spec` (`@workspace/api-spec`)
 
-Owns the OpenAPI 3.1 spec (`openapi.yaml`) and the Orval config (`orval.config.ts`). Running codegen produces output into two sibling packages:
-
-1. `lib/api-client-react/src/generated/` — React Query hooks + fetch client
-2. `lib/api-zod/src/generated/` — Zod schemas
-
+Owns the OpenAPI 3.1 spec (`openapi.yaml`) and the Orval config (`orval.config.ts`). Running codegen produces output into two sibling packages.
 Run codegen: `pnpm --filter @workspace/api-spec run codegen`
 
 ### `lib/api-zod` (`@workspace/api-zod`)
 
-Generated Zod schemas from the OpenAPI spec (e.g. `HealthCheckResponse`). Used by `api-server` for response validation.
+Generated Zod schemas from the OpenAPI spec.
 
 ### `lib/api-client-react` (`@workspace/api-client-react`)
 
-Generated React Query hooks and fetch client from the OpenAPI spec (e.g. `useHealthCheck`, `healthCheck`).
-
-### `scripts` (`@workspace/scripts`)
-
-Utility scripts package. Each script is a `.ts` file in `src/` with a corresponding npm script in `package.json`. Run scripts via `pnpm --filter @workspace/scripts run <script>`. Scripts can import any workspace package (e.g., `@workspace/db`) by adding it as a dependency in `scripts/package.json`.
+Generated React Query hooks and fetch client from the OpenAPI spec.
 
 ## Payroll Business Rules
 
-- Base salary: 5,000 RUB per month
-- Salary limit: 24,500 RUB (hours scaled down if exceeded)
-- Overtime: 2x rate for hours above monthly norm
-- 2026 production calendar norms: Jan=136h, Feb=151h, Mar=167h, etc.
-- Fired before 17th of month: 0 hours/salary
-- Fired on/after 17th: only hours up to dismissal date
-- Vacation (ОТПУСК): 0 hours
-- Sick (БОЛЬНИЧНЫЙ): 0 hours unless end date specified, then hours after sick-end
-- FIO matching: exact + fuzzy by surname prefix and initials
-- Master file format: Excel with day numbers in row 3, employees starting from row 5+, 2-column-per-day layout (hours go in second column of each day pair)
+- **Per-employee salary (оклад)**: Read from master file column 70 (e.g., 4500 or 5100 RUB). Default 4500 if not found.
+- **Salary limit**: 24,500 RUB max per employee (hours scaled proportionally if exceeded)
+- **Overtime**: 2x hourly rate for hours above monthly production calendar norm
+- **Hourly rate**: employee_salary / production_calendar_norm_hours
+- **2026 production calendar norms (40-hour week)**: Jan=120h, Feb=152h, Mar=168h, Apr=175h, May=151h, Jun=167h, Jul=184h, Aug=168h, Sep=176h, Oct=176h, Nov=159h, Dec=176h
+- **Hours merging**: Existing hours from master + report hours merged per day (take max if both exist)
+- **Fired before 17th**: 0 hours/salary
+- **Fired on/after 17th**: only hours up to dismissal date counted
+- **ОТПУСК (vacation)**: 0 hours
+- **БОЛЬНИЧНЫЙ (sick)**: 0 hours unless end date specified, then hours after sick-end
+- **ЗА СВОЙ СЧЁТ (unpaid leave)**: 0 hours/salary
+- **Employee filtering**: Skip rows containing "бухгалтер", "руководитель", "главн"
+- **Employee section detection**: Stop parsing after 3 consecutive empty rows in column B
+- **FIO matching**: Exact normalized match + fuzzy by surname prefix and initials (dots removed)
+- **Master file format**: Excel with day numbers in row 3, 2 columns per day (col1=request #1, col2=request #2), employees start from headerRow+2, salary in col 70
+- **Output file**: New hours written to col2 of day pair, green fill (FF90EE90) for genuinely new hours, red fill for fired employees
+- **Report file format**: Headers row 1 (Дата открытия, Кассир, НАЧИСЛЕНО/ОКРУГЛЕНИЕ), data rows 2+. Date can be Date object, string (DD.MM.YYYY), or Excel serial. Hours can be number or "HH:MM" string.

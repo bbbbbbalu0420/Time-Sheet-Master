@@ -6,6 +6,8 @@
  * OpenAPI spec version: 0.1.0
  */
 import type { EmployeeResultDayHours } from "./employeeResultDayHours";
+import type { EmployeeResultExistingHours } from "./employeeResultExistingHours";
+import type { EmployeeResultNewHours } from "./employeeResultNewHours";
 
 export interface EmployeeResult {
   fio: string;
@@ -14,4 +16,9 @@ export interface EmployeeResult {
   salary: number;
   overtime: number;
   dayHours?: EmployeeResultDayHours;
+  existingHours?: EmployeeResultExistingHours;
+  newHours?: EmployeeResultNewHours;
+  employeeSalary?: number;
+  normHours?: number;
+  hourCost?: number;
 }

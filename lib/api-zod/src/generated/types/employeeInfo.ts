@@ -12,6 +12,7 @@ export interface EmployeeInfo {
   rawFio: string;
   status: string;
   dismissDate?: string | null;
+  salary?: number;
   existingHours?: EmployeeInfoExistingHours;
   totalExistingHours: number;
 }

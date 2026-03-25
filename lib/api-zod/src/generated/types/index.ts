@@ -10,6 +10,8 @@ export * from "./employeeInfo";
 export * from "./employeeInfoExistingHours";
 export * from "./employeeResult";
 export * from "./employeeResultDayHours";
+export * from "./employeeResultExistingHours";
+export * from "./employeeResultNewHours";
 export * from "./healthStatus";
 export * from "./masterUploadResponse";
 export * from "./payrollStatus";

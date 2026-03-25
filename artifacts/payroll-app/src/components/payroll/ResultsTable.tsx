@@ -7,8 +7,21 @@ import {
   createColumnHelper,
 } from "@tanstack/react-table";
 import { formatCurrency, cn } from "@/lib/utils";
-import type { EmployeeResult } from "@workspace/api-client-react";
-import { ArrowUpDown, AlertCircle } from "lucide-react";
+import { ArrowUpDown, AlertCircle, Plus } from "lucide-react";
+
+interface EmployeeResult {
+  fio: string;
+  status: string;
+  totalHours: number;
+  salary: number;
+  overtime: number;
+  dayHours: Record<string, number>;
+  existingHours?: Record<string, number>;
+  newHours?: Record<string, number>;
+  employeeSalary?: number;
+  normHours?: number;
+  hourCost?: number;
+}
 
 interface ResultsTableProps {
   results: EmployeeResult[];
@@ -21,6 +34,7 @@ const getStatusColor = (status: string) => {
   if (status === 'ОТПУСК') return 'bg-blue-500/10 text-blue-400 border-blue-500/20';
   if (status === 'БОЛЬНИЧНЫЙ') return 'bg-amber-500/10 text-amber-400 border-amber-500/20';
   if (status.includes('УВОЛЕН')) return 'bg-rose-500/10 text-rose-400 border-rose-500/20';
+  if (status.includes('СВОЙ СЧЁТ') || status.includes('СВОЙ СЧЕТ')) return 'bg-violet-500/10 text-violet-400 border-violet-500/20';
   return 'bg-white/5 text-muted-foreground border-white/10';
 };
 
@@ -43,13 +57,32 @@ export function ResultsTable({ results }: ResultsTableProps) {
         );
       },
     }),
-    columnHelper.accessor("totalHours", {
-      header: "Часы",
-      cell: (info) => (
-        <div className="font-mono text-right font-medium">
-          {info.getValue().toFixed(1)} ч.
-        </div>
-      ),
+    columnHelper.display({
+      id: "hoursInfo",
+      header: "Часы (сущ. + нов.)",
+      cell: (info) => {
+        const row = info.row.original;
+        const existCount = row.existingHours ? Object.keys(row.existingHours).length : 0;
+        const newCount = row.newHours ? Object.keys(row.newHours).length : 0;
+        const existTotal = row.existingHours ? Object.values(row.existingHours).reduce((s: number, h: any) => s + (typeof h === 'number' ? h : 0), 0) : 0;
+        const newTotal = row.newHours ? Object.values(row.newHours).reduce((s: number, h: any) => s + (typeof h === 'number' ? h : 0), 0) : 0;
+
+        return (
+          <div className="font-mono text-right text-sm space-y-0.5">
+            <div className="font-medium">{row.totalHours.toFixed(1)} ч.</div>
+            {(existCount > 0 || newCount > 0) && (
+              <div className="text-xs text-muted-foreground">
+                {existCount > 0 && <span>{existTotal.toFixed(0)}ч сущ.</span>}
+                {newCount > 0 && (
+                  <span className="text-emerald-400 ml-1">
+                    <Plus className="w-3 h-3 inline" />{newTotal.toFixed(0)}ч нов.
+                  </span>
+                )}
+              </div>
+            )}
+          </div>
+        );
+      },
     }),
     columnHelper.accessor("overtime", {
       header: "Переработка",
@@ -61,6 +94,15 @@ export function ResultsTable({ results }: ResultsTableProps) {
             +{val.toFixed(1)} ч.
           </div>
         );
+      },
+    }),
+    columnHelper.display({
+      id: "empSalary",
+      header: "Оклад",
+      cell: (info) => {
+        const val = info.row.original.employeeSalary;
+        if (!val) return <div className="text-right text-muted-foreground font-mono">-</div>;
+        return <div className="text-right font-mono text-sm text-muted-foreground">{formatCurrency(val)}</div>;
       },
     }),
     columnHelper.accessor("salary", {
@@ -75,7 +117,7 @@ export function ResultsTable({ results }: ResultsTableProps) {
             )}
             <span className={cn(
               "font-mono font-bold text-lg tracking-tight",
-              isLimit ? "text-rose-400" : "text-emerald-400"
+              isLimit ? "text-rose-400" : val > 0 ? "text-emerald-400" : "text-muted-foreground"
             )}>
               {formatCurrency(val)}
             </span>
