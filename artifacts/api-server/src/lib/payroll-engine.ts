@@ -5,6 +5,16 @@ import fs from "fs";
 const SALARY_BASE = 5000.0;
 const SALARY_LIMIT = 24_500.0;
 
+function getCellValue(cell: ExcelJS.Cell): any {
+  const v = cell.value;
+  if (v && typeof v === "object" && !Array.isArray(v) && !(v instanceof Date)) {
+    if ("result" in v) return (v as any).result;
+    if ("sharedFormula" in v) return (v as any).result;
+    if ("formula" in v) return (v as any).result ?? null;
+  }
+  return v;
+}
+
 const WORK_HOURS_NORM_2026: Record<number, number> = {
   1: 120, 2: 152, 3: 168, 4: 175,
   5: 151, 6: 167, 7: 184, 8: 168,
@@ -61,6 +71,7 @@ export interface PayrollSession {
   headerRow: number;
   uploadedReports: string[];
   reportHours: Record<string, Record<number, number>>;
+  storeHours: Record<number, number>;
   results: EmployeeResult[];
   isProcessed: boolean;
   resultBuffer: Buffer | null;
@@ -77,6 +88,7 @@ export function createSession(): PayrollSession {
     headerRow: 0,
     uploadedReports: [],
     reportHours: {},
+    storeHours: {},
     results: [],
     isProcessed: false,
     resultBuffer: null,
@@ -217,10 +229,10 @@ export async function parseMasterFile(buffer: Buffer, month: number, clearHours:
       for (const [dayStr, pair] of Object.entries(dayColPairs)) {
         const day = parseInt(dayStr);
         let dayTotal = 0;
-        const v1 = row.getCell(pair.col1).value;
+        const v1 = getCellValue(row.getCell(pair.col1));
         if (typeof v1 === "number" && v1 > 0) dayTotal += v1;
         if (pair.col2 !== pair.col1) {
-          const v2 = row.getCell(pair.col2).value;
+          const v2 = getCellValue(row.getCell(pair.col2));
           if (typeof v2 === "number" && v2 > 0) dayTotal += v2;
         }
         if (dayTotal > 0) {
@@ -385,11 +397,12 @@ export async function processReport(
   }
 
   const fileHours: Record<string, Record<number, number>> = {};
+  const storeHours: Record<number, number> = {};
   let records = 0;
 
   for (let rowIdx = 2; rowIdx <= ws.rowCount; rowIdx++) {
     const row = ws.getRow(rowIdx);
-    const rawDate = row.getCell(dateCol).value;
+    const rawDate = getCellValue(row.getCell(dateCol));
     if (!rawDate) continue;
 
     let dt: Date | null = null;
@@ -412,10 +425,11 @@ export async function processReport(
     if (dt.getMonth() + 1 !== month) continue;
 
     const day = dt.getDate();
-    const rawFio = String(row.getCell(cashierCol).value || "").trim().toUpperCase();
-    if (!rawFio || rawFio === "NAN" || rawFio.includes("СИС. АДМИНИСТРАТОР") || rawFio.includes("ИТОГО")) continue;
+    const rawCashier = getCellValue(row.getCell(cashierCol));
+    const rawFio = String(rawCashier || "").trim().toUpperCase();
+    if (!rawFio || rawFio === "NAN" || rawFio.includes("ИТОГО")) continue;
 
-    const rawHours = row.getCell(hoursCol).value;
+    const rawHours = getCellValue(row.getCell(hoursCol));
     if (rawHours === null || rawHours === undefined) continue;
 
     let hours: number;
@@ -432,9 +446,23 @@ export async function processReport(
     }
     if (isNaN(hours) || hours <= 0) continue;
 
+    if (rawFio.includes("СИС") || rawFio.includes("АДМИНИСТРАТОР") || rawFio.includes("SYS")) {
+      storeHours[day] = (storeHours[day] || 0) + hours;
+      records++;
+      continue;
+    }
+
     if (!fileHours[rawFio]) fileHours[rawFio] = {};
     fileHours[rawFio][day] = (fileHours[rawFio][day] || 0) + hours;
     records++;
+  }
+
+  if (Object.keys(storeHours).length > 0) {
+    if (!currentSession.storeHours) currentSession.storeHours = {};
+    for (const [dayStr, hrs] of Object.entries(storeHours)) {
+      const d = parseInt(dayStr);
+      currentSession.storeHours[d] = (currentSession.storeHours[d] || 0) + hrs;
+    }
   }
 
   const masterKeys: Record<string, string> = {};
