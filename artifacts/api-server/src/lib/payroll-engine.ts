@@ -384,16 +384,28 @@ export async function processReport(
     headers.push(String(v || "").trim().toUpperCase());
   }
 
-  let dateCol = -1, cashierCol = -1, hoursCol = -1;
+  let dateCol = -1, cashierCol = -1, hoursCol = -1, endTimeCol = -1;
   for (let i = 0; i < headers.length; i++) {
     const h = headers[i];
     if (dateCol === -1 && (h.includes("ДАТА") || h.includes("DATE"))) dateCol = i + 1;
     if (cashierCol === -1 && (h.includes("КАССИР") || h.includes("ФИО") || h.includes("CASHIER") || h.includes("СОТРУДНИК"))) cashierCol = i + 1;
     if (h.includes("НАЧИСЛЕНО") || h.includes("ОКРУГЛЕНИЕ") || h === "HOURS" || h === "CHARGE") hoursCol = i + 1;
+    if (h.includes("ПОСЛЕДН") || h.includes("ЗАКРЫТ") || h.includes("END") || h.includes("ВРЕМЯ ПОСЛЕДН")) endTimeCol = i + 1;
   }
 
   if (dateCol === -1 || cashierCol === -1 || hoursCol === -1) {
     throw new Error(`Не найдены необходимые столбцы в файле ${fileName}. Ожидаются: Дата открытия, Кассир, НАЧИСЛЕНО. Найдены: ${headers.filter(h => h).join(', ')}`);
+  }
+
+  function calculateHoursFromTimestamps(openDate: Date, closeDate: Date): number {
+    const diffMs = closeDate.getTime() - openDate.getTime();
+    if (diffMs <= 0) return 0;
+    const totalMinutes = diffMs / 60000;
+    const fullHours = Math.floor(totalMinutes / 60);
+    const remainMinutes = totalMinutes % 60;
+    const rounded = remainMinutes >= 15 ? fullHours + 1 : fullHours;
+    const lunch = rounded > 12 ? 2 : 1;
+    return Math.max(0, rounded - lunch);
   }
 
   const fileHours: Record<string, Record<number, number>> = {};
@@ -422,38 +434,78 @@ export async function processReport(
     }
 
     if (!dt || isNaN(dt.getTime())) continue;
-    if (dt.getMonth() + 1 !== month) continue;
 
-    const day = dt.getDate();
     const rawCashier = getCellValue(row.getCell(cashierCol));
     const rawFio = String(rawCashier || "").trim().toUpperCase();
     if (!rawFio || rawFio === "NAN" || rawFio.includes("ИТОГО")) continue;
 
-    const rawHours = getCellValue(row.getCell(hoursCol));
-    if (rawHours === null || rawHours === undefined) continue;
+    let hours: number | null = null;
 
-    let hours: number;
+    const rawHours = getCellValue(row.getCell(hoursCol));
     if (typeof rawHours === "number") {
       hours = rawHours;
-    } else {
+    } else if (rawHours !== null && rawHours !== undefined) {
       const strH = String(rawHours).replace(",", ".");
       const timeMatch = strH.match(/^(\d+):(\d+)$/);
       if (timeMatch) {
         hours = parseInt(timeMatch[1]) + parseInt(timeMatch[2]) / 60;
       } else {
-        hours = parseFloat(strH);
+        const parsed = parseFloat(strH);
+        if (!isNaN(parsed)) hours = parsed;
       }
     }
-    if (isNaN(hours) || hours <= 0) continue;
+
+    if ((hours === null || isNaN(hours as number)) && endTimeCol !== -1) {
+      const rawEnd = getCellValue(row.getCell(endTimeCol));
+      const openRaw = row.getCell(dateCol).value;
+      const closeRaw = row.getCell(endTimeCol).value;
+      let openDt: Date | null = null;
+      let closeDt: Date | null = null;
+
+      if (openRaw instanceof Date) openDt = openRaw;
+      else {
+        const v = getCellValue(row.getCell(dateCol));
+        if (v instanceof Date) openDt = v;
+      }
+
+      if (closeRaw instanceof Date) closeDt = closeRaw;
+      else {
+        if (rawEnd instanceof Date) closeDt = rawEnd;
+      }
+
+      if (openDt && closeDt) {
+        hours = calculateHoursFromTimestamps(openDt, closeDt);
+      }
+    }
+
+    if (hours === null || isNaN(hours) || hours <= 0) continue;
+
+    const openDtForMonth = dt;
+    let reportDay: number;
+    if (endTimeCol !== -1) {
+      const rawEnd = row.getCell(endTimeCol).value;
+      let closeDt: Date | null = null;
+      if (rawEnd instanceof Date) closeDt = rawEnd;
+      if (closeDt && closeDt.getDate() !== openDtForMonth.getDate()) {
+        reportDay = closeDt.getDate();
+        if (closeDt.getMonth() + 1 !== month) continue;
+      } else {
+        if (openDtForMonth.getMonth() + 1 !== month) continue;
+        reportDay = openDtForMonth.getDate();
+      }
+    } else {
+      if (openDtForMonth.getMonth() + 1 !== month) continue;
+      reportDay = openDtForMonth.getDate();
+    }
 
     if (rawFio.includes("СИС") || rawFio.includes("АДМИНИСТРАТОР") || rawFio.includes("SYS")) {
-      storeHours[day] = (storeHours[day] || 0) + hours;
+      storeHours[reportDay] = (storeHours[reportDay] || 0) + hours;
       records++;
       continue;
     }
 
     if (!fileHours[rawFio]) fileHours[rawFio] = {};
-    fileHours[rawFio][day] = (fileHours[rawFio][day] || 0) + hours;
+    fileHours[rawFio][reportDay] = Math.max(fileHours[rawFio][reportDay] || 0, hours);
     records++;
   }
 
@@ -491,7 +543,7 @@ export async function processReport(
       for (const [dayStr, hrs] of Object.entries(dayHours)) {
         const d = parseInt(dayStr);
         currentSession.reportHours[masterFio][d] =
-          (currentSession.reportHours[masterFio][d] || 0) + hrs;
+          Math.max(currentSession.reportHours[masterFio][d] || 0, hrs);
       }
     } else {
       unmatched.push(reportFio);
@@ -519,30 +571,39 @@ function generateSchedule(
   empIndex: number,
   month: number,
   existingDays: Set<number>,
+  existingTotalHours: number,
   maxDay: number = 31,
+  minDay: number = 1,
 ): Record<number, number> {
   const daysInMonth = Math.min(getDaysInMonth(month), maxDay);
   const schedule: Record<number, number> = {};
 
+  const targetHours = (TARGET_HOURS_MIN + TARGET_HOURS_MAX) / 2;
+  const hoursNeeded = targetHours - existingTotalHours;
+
+  if (hoursNeeded <= 0) return schedule;
+
+  const needDays = Math.ceil(hoursNeeded / SHIFT_HOURS);
+  if (needDays <= 0) return schedule;
+
   const startDay = (empIndex % 2 === 0) ? 1 : 2;
-
-  const targetTotalDays = Math.round((TARGET_HOURS_MIN + TARGET_HOURS_MAX) / 2 / SHIFT_HOURS);
-  const needDays = Math.max(0, targetTotalDays - existingDays.size);
-
-  if (needDays === 0) return schedule;
 
   const candidates: number[] = [];
   for (let d = startDay; d <= daysInMonth; d += 2) {
-    if (!existingDays.has(d)) candidates.push(d);
+    if (d >= minDay && !existingDays.has(d)) candidates.push(d);
   }
   if (candidates.length < needDays) {
     for (let d = (startDay === 1 ? 2 : 1); d <= daysInMonth; d += 2) {
-      if (!existingDays.has(d)) candidates.push(d);
+      if (d >= minDay && !existingDays.has(d)) candidates.push(d);
     }
   }
 
+  let remainingHours = hoursNeeded;
   for (let i = 0; i < Math.min(needDays, candidates.length); i++) {
-    schedule[candidates[i]] = SHIFT_HOURS;
+    const hrs = Math.min(SHIFT_HOURS, remainingHours);
+    if (hrs <= 0) break;
+    schedule[candidates[i]] = hrs;
+    remainingHours -= hrs;
   }
 
   return schedule;
@@ -612,30 +673,41 @@ export async function processPayroll(): Promise<EmployeeResult[]> {
       }
     }
 
+    let minDay = 1;
+
     if (emp.status === "БОЛЬНИЧНЫЙ") {
       if (emp.sickEnd) {
         if (emp.sickEnd.getMonth() + 1 === month) {
           const cutoff = emp.sickEnd.getDate();
+          minDay = cutoff + 1;
           const filtered: Record<number, number> = {};
           for (const [d, h] of Object.entries(mergedHours)) {
             if (parseInt(d) > cutoff) filtered[parseInt(d)] = h;
           }
           mergedHours = filtered;
+          if (minDay > getDaysInMonth(month)) {
+            results.push(zeroResult(emp.status));
+            continue;
+          }
         } else {
-          mergedHours = {};
+          const payrollStart = new Date(2026, month - 1, 1);
+          const payrollEnd = new Date(2026, month, 0);
+          if (emp.sickEnd > payrollEnd) {
+            results.push(zeroResult(emp.status));
+            continue;
+          } else if (emp.sickEnd < payrollStart) {
+            // sick leave already ended before this month — treat as working
+          }
         }
       } else {
-        mergedHours = {};
-      }
-
-      if (Object.keys(mergedHours).length === 0) {
         results.push(zeroResult(emp.status));
         continue;
       }
     }
 
     const existingDays = new Set(Object.keys(mergedHours).map(Number));
-    const generated = generateSchedule(empIndex, month, existingDays, maxDay);
+    const existingTotalHours = Object.values(mergedHours).reduce((s, h) => s + h, 0);
+    const generated = generateSchedule(empIndex, month, existingDays, existingTotalHours, maxDay, minDay);
     empIndex++;
 
     for (const [dayStr, hrs] of Object.entries(generated)) {

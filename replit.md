@@ -101,8 +101,9 @@ Generated React Query hooks and fetch client from the OpenAPI spec.
 - **Total salary**: basePay + overtimePay + nightPay, capped at 24,500
 - **2026 production calendar norms (40-hour week)**: Jan=120h, Feb=152h, Mar=168h, Apr=175h, May=151h, Jun=167h, Jul=184h, Aug=168h, Sep=176h, Oct=176h, Nov=159h, Dec=176h
 - **Clear hours option**: When uploading master file, optionally clear all existing hours (default: enabled). Only report hours are used.
-- **Schedule generation**: For all working employees, system auto-generates 22-hour shifts every other day (alternating odd/even days per employee index). Target ~362h/month (16-17 days × 22h). Report hours are merged in; generated days fill remaining slots up to target.
+- **Schedule generation**: For all working employees, system auto-generates 22-hour shifts every other day (alternating odd/even days per employee index). Target ~362.5h/month (midpoint of 350-375). Report hours are merged first (using Math.max, not sum, for same employee/day across reports); generated days fill remaining deficit to reach target hours.
 - **Hours per employee**: Target 350-375 hours/month, 22-hour shifts, work every other day
+- **Report hour deduplication**: Within a single report and across multiple reports, same employee + same day uses Math.max (not sum) to avoid impossible >24h/day values
 - **Fired before 17th**: 0 hours/salary
 - **Fired on/after 17th**: only hours up to dismissal date counted
 - **ОТПУСК (vacation)**: 0 hours, yellow fill in output
@@ -114,4 +115,6 @@ Generated React Query hooks and fetch client from the OpenAPI spec.
 - **FIO matching**: Exact normalized match + fuzzy by surname prefix and initials (dots removed)
 - **Master file format**: Excel with day numbers in row 3, 2 columns per day (col1=existing, col2=new), employees start from headerRow+2
 - **Output file**: Hours written to col2 of day pair, green fill (FF90EE90) for work hours, yellow (FFFFFF00) for vacation/sick, red (FFFF6B6B) for fired
-- **Report file format**: Headers row 1 (Дата открытия, Кассир, НАЧИСЛЕНО/ОКРУГЛЕНИЕ), data rows 2+. Date can be Date object, string (DD.MM.YYYY), or Excel serial. Hours can be number or "HH:MM" string.
+- **Report file format**: Headers row 1 (Дата открытия, Кассир, Время последнего чека, ВСЕГО, ОКРУГЛЕНИЕ, ОБЕД, НАЧИСЛЕНО), data rows 2+. Date can be Date object, string (DD.MM.YYYY), or Excel serial. Hours can be number, "HH:MM" string, or calculated from timestamps (openDate→closeDate) when formula results are missing.
+- **Hours from timestamps**: When report formulas have no cached result, hours are calculated: totalMin = (closeDate - openDate), rounded = floor(min/60) + (rem>=15 ? 1 : 0), lunch = (rounded>12 ? 2 : 1), charged = max(0, rounded - lunch). End time column detected by header "ПОСЛЕДН".
+- **Sick leave date comparison**: Uses full date comparison (not just month number) to correctly handle cross-year cases (e.g., sick leave ending Dec 2025 while processing Jan 2026).
