@@ -887,7 +887,20 @@ export async function generateResultFile(): Promise<Buffer> {
     empRow.getCell(67).value = result.totalHours;
   }
 
+  const firstEmpRow = Math.min(...currentSession.employees.map((e) => e.row));
   const lastEmpRow = Math.max(...currentSession.employees.map((e) => e.row));
+
+  for (let r = 1; r <= lastEmpRow + 20; r++) {
+    const row = ws.getRow(r);
+    for (const col of [65, 66, 67]) {
+      const cell = row.getCell(col);
+      const v = cell.value;
+      if (v && typeof v === "object" && ("formula" in v || "sharedFormula" in v)) {
+        const cached = (v as { result?: unknown }).result;
+        cell.value = typeof cached === "number" ? cached : 0;
+      }
+    }
+  }
 
   function colLetterToNum(letters: string): number {
     return letters.split("").reduce((acc, ch) => acc * 26 + ch.charCodeAt(0) - 64, 0);
