@@ -578,13 +578,8 @@ function generateSchedule(
   const daysInMonth = Math.min(getDaysInMonth(month), maxDay);
   const schedule: Record<number, number> = {};
 
-  const targetHours = (TARGET_HOURS_MIN + TARGET_HOURS_MAX) / 2;
-  const hoursNeeded = targetHours - existingTotalHours;
-
-  if (hoursNeeded <= 0) return schedule;
-
-  const needDays = Math.ceil(hoursNeeded / SHIFT_HOURS);
-  if (needDays <= 0) return schedule;
+  const maxFullShifts = Math.floor((TARGET_HOURS_MAX - existingTotalHours) / SHIFT_HOURS);
+  if (maxFullShifts <= 0) return schedule;
 
   const startDay = (empIndex % 2 === 0) ? 1 : 2;
 
@@ -592,18 +587,15 @@ function generateSchedule(
   for (let d = startDay; d <= daysInMonth; d += 2) {
     if (d >= minDay && !existingDays.has(d)) candidates.push(d);
   }
-  if (candidates.length < needDays) {
+  if (candidates.length < maxFullShifts) {
     for (let d = (startDay === 1 ? 2 : 1); d <= daysInMonth; d += 2) {
       if (d >= minDay && !existingDays.has(d)) candidates.push(d);
     }
   }
 
-  let remainingHours = hoursNeeded;
-  for (let i = 0; i < Math.min(needDays, candidates.length); i++) {
-    const hrs = Math.min(SHIFT_HOURS, remainingHours);
-    if (hrs <= 0) break;
-    schedule[candidates[i]] = hrs;
-    remainingHours -= hrs;
+  const shiftsToAdd = Math.min(maxFullShifts, candidates.length);
+  for (let i = 0; i < shiftsToAdd; i++) {
+    schedule[candidates[i]] = SHIFT_HOURS;
   }
 
   return schedule;
@@ -798,22 +790,32 @@ export async function generateResultFile(): Promise<Buffer> {
       }
     }
 
-    if (result.status === "ОТПУСК" || result.status === "БОЛЬНИЧНЫЙ") {
+    const applyFill = (cell: ExcelJS.Cell, fill: ExcelJS.Fill) => {
+      cell.style = { ...cell.style, fill };
+    };
+
+    if (result.status === "ОТПУСК" || result.status === "ЗА СВОЙ СЧЁТ" || (result.status === "БОЛЬНИЧНЫЙ" && result.totalHours === 0)) {
       for (const [, pair] of Object.entries(currentSession.dayColPairs)) {
-        const cell1 = row.getCell(pair.col1);
-        const cell2 = row.getCell(pair.col2);
-        cell1.fill = yellowFill;
-        if (pair.col2 !== pair.col1) cell2.fill = yellowFill;
+        applyFill(row.getCell(pair.col1), yellowFill);
+        if (pair.col2 !== pair.col1) applyFill(row.getCell(pair.col2), yellowFill);
       }
       continue;
     }
 
+    if (result.status === "БОЛЬНИЧНЫЙ" && result.totalHours > 0) {
+      for (const [dayStr, pair] of Object.entries(currentSession.dayColPairs)) {
+        const dayNum = parseInt(dayStr);
+        if (!result.dayHours[dayNum]) {
+          applyFill(row.getCell(pair.col1), yellowFill);
+          if (pair.col2 !== pair.col1) applyFill(row.getCell(pair.col2), yellowFill);
+        }
+      }
+    }
+
     if (result.status === "УВОЛЕН") {
       for (const [, pair] of Object.entries(currentSession.dayColPairs)) {
-        const cell1 = row.getCell(pair.col1);
-        const cell2 = row.getCell(pair.col2);
-        cell1.fill = redFill;
-        if (pair.col2 !== pair.col1) cell2.fill = redFill;
+        applyFill(row.getCell(pair.col1), redFill);
+        if (pair.col2 !== pair.col1) applyFill(row.getCell(pair.col2), redFill);
       }
     }
 
@@ -837,7 +839,7 @@ export async function generateResultFile(): Promise<Buffer> {
       }
 
       if (result.status !== "УВОЛЕН") {
-        cell.fill = greenFill;
+        applyFill(cell, greenFill);
       }
     }
   }
