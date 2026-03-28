@@ -844,6 +844,148 @@ export async function generateResultFile(): Promise<Buffer> {
     }
   }
 
+  const resultByRow: Record<number, number> = {};
+  for (const result of currentSession.results) {
+    const emp = currentSession.employees.find((e) => e.fio === result.fio);
+    if (emp) resultByRow[emp.row] = result.totalHours;
+  }
+
+  let decEmployeeTotal = 0;
+  let janEmployeeTotal = 0;
+  for (const emp of currentSession.employees) {
+    const boCell = ws.getRow(emp.row).getCell(67).value;
+    let decBO = 0;
+    if (typeof boCell === "number") {
+      decBO = boCell;
+    } else if (boCell && typeof boCell === "object" && "result" in boCell) {
+      const r = (boCell as { result?: unknown }).result;
+      if (typeof r === "number") decBO = r;
+    }
+    const janBO = resultByRow[emp.row] || 0;
+    if (decBO > 0) {
+      decEmployeeTotal += decBO;
+      janEmployeeTotal += janBO;
+    }
+  }
+
+  for (const result of currentSession.results) {
+    const emp = currentSession.employees.find((e) => e.fio === result.fio);
+    if (!emp) continue;
+    const empRow = ws.getRow(emp.row);
+    if (currentSession.clearHours) {
+      empRow.getCell(65).value = 0;
+      empRow.getCell(66).value = result.totalHours;
+    } else {
+      let bmTotal = 0;
+      for (const [, pair] of Object.entries(currentSession.dayColPairs)) {
+        const v = empRow.getCell(pair.col1).value;
+        if (typeof v === "number") bmTotal += v;
+      }
+      empRow.getCell(65).value = Math.round(bmTotal * 10) / 10;
+      empRow.getCell(66).value = Math.round((result.totalHours - bmTotal) * 10) / 10;
+    }
+    empRow.getCell(67).value = result.totalHours;
+  }
+
+  const lastEmpRow = Math.max(...currentSession.employees.map((e) => e.row));
+
+  function colLetterToNum(letters: string): number {
+    return letters.split("").reduce((acc, ch) => acc * 26 + ch.charCodeAt(0) - 64, 0);
+  }
+
+  function evalFormulaCell(formula: string): number {
+    const bmbnRefs = formula.match(/B[MNO]\d+/g);
+    if (bmbnRefs) {
+      let total = 0;
+      for (const ref of bmbnRefs) {
+        const refRow = parseInt(ref.replace(/^B[MNO]/, ""));
+        const boVal = ws.getRow(refRow).getCell(67).value;
+        if (typeof boVal === "number") total += boVal;
+      }
+      const otherParts = formula.split("+").filter(
+        (p) => !p.trim().match(/^B[MNO]\d+$/) && !p.trim().startsWith("#")
+      );
+      for (const part of otherParts) {
+        const m = part.trim().match(/^([A-Z]+)(\d+)$/);
+        if (m) {
+          const v = ws.getRow(parseInt(m[2])).getCell(colLetterToNum(m[1])).value;
+          if (typeof v === "number") total += v;
+        }
+      }
+      return total;
+    }
+    return 0;
+  }
+
+  function evalSumFormula(formula: string): number {
+    const m = formula.match(/SUM\(([A-Z]+)(\d+):([A-Z]+)(\d+)\)/);
+    if (!m) return 0;
+    const col = colLetterToNum(m[1]);
+    const startRow = parseInt(m[2]);
+    const endRow = parseInt(m[4]);
+    let total = 0;
+    for (let r = startRow; r <= endRow; r++) {
+      const v = ws.getRow(r).getCell(col).value;
+      if (typeof v === "number") total += v;
+    }
+    return total;
+  }
+
+  function evalCompositeFormula(formula: string): number {
+    const parts = formula.split("+");
+    let total = 0;
+    for (const part of parts) {
+      const m = part.trim().match(/^([A-Z]+)(\d+)$/);
+      if (m) {
+        const v = ws.getRow(parseInt(m[2])).getCell(colLetterToNum(m[1])).value;
+        if (typeof v === "number") total += v;
+      }
+    }
+    return total;
+  }
+
+  for (let r = lastEmpRow + 1; r <= lastEmpRow + 20; r++) {
+    const row = ws.getRow(r);
+    for (const col of [6, 15]) {
+      const cellVal = row.getCell(col).value;
+      if (!cellVal || typeof cellVal !== "object" || !("formula" in cellVal)) continue;
+      const formula = (cellVal as { formula: string }).formula;
+      if (formula.match(/B[MN]\d+/)) {
+        row.getCell(col).value = Math.round(evalFormulaCell(formula));
+      }
+    }
+  }
+
+  const scaleFactor = decEmployeeTotal > 0 ? janEmployeeTotal / decEmployeeTotal : 1;
+
+  for (let r = lastEmpRow + 1; r <= lastEmpRow + 20; r++) {
+    const row = ws.getRow(r);
+    const storeName = row.getCell(17).value;
+    if (!storeName || typeof storeName !== "string") continue;
+    for (const [primary, mirror] of [[22, 23], [26, 27]] as const) {
+      const val = row.getCell(primary).value;
+      if (typeof val === "number" && val > 0) {
+        const scaled = Math.round(val * scaleFactor);
+        row.getCell(primary).value = scaled;
+        row.getCell(mirror).value = scaled;
+      }
+    }
+  }
+
+  for (let r = lastEmpRow + 1; r <= lastEmpRow + 20; r++) {
+    const row = ws.getRow(r);
+    for (const col of [6, 15]) {
+      const cellVal = row.getCell(col).value;
+      if (!cellVal || typeof cellVal !== "object" || !("formula" in cellVal)) continue;
+      const formula = (cellVal as { formula: string }).formula;
+      if (formula.startsWith("SUM(")) {
+        row.getCell(col).value = Math.round(evalSumFormula(formula));
+      } else if (!formula.match(/B[MN]\d+/)) {
+        row.getCell(col).value = Math.round(evalCompositeFormula(formula));
+      }
+    }
+  }
+
   const buf = await wb.xlsx.writeBuffer();
   currentSession.resultBuffer = Buffer.from(buf);
   return currentSession.resultBuffer;
